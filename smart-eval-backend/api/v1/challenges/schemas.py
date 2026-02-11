@@ -1,0 +1,1 @@
+# Challenge request/response schemas

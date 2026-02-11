@@ -1,0 +1,11 @@
+# Development Docker Compose configuration
+version: '3.8'
+
+services:
+  # Development service definitions to be added
+
+volumes:
+  # Volume definitions to be added
+
+networks:
+  # Network definitions to be added

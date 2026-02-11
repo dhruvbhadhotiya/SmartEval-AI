@@ -1,0 +1,8 @@
+# Python dependencies
+# Flask and extensions
+# MongoDB driver
+# Redis client
+# Celery
+# OCR libraries
+# LLM integration
+# Testing libraries
