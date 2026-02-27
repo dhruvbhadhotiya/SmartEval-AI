@@ -90,15 +90,15 @@ Authorization: Bearer <access_token>
 
 ### 2.3 Error Codes
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `VALIDATION_ERROR` | 400 | Request validation failed |
-| `UNAUTHORIZED` | 401 | Authentication required |
-| `FORBIDDEN` | 403 | Insufficient permissions |
-| `NOT_FOUND` | 404 | Resource not found |
-| `CONFLICT` | 409 | Resource already exists |
-| `RATE_LIMITED` | 429 | Too many requests |
-| `INTERNAL_ERROR` | 500 | Server error |
+| Code                  | HTTP Status | Description |
+|-----------------------|-------------|-------------|
+| `VALIDATION_ERROR`    | 400 | Request validation failed |
+| `UNAUTHORIZED`        | 401 | Authentication required |
+| `FORBIDDEN`           | 403 | Insufficient permissions |
+| `NOT_FOUND`           | 404 | Resource not found |
+| `CONFLICT`            | 409 | Resource already exists |
+| `RATE_LIMITED`        | 429 | Too many requests |
+| `INTERNAL_ERROR`      | 500 | Server error |
 | `SERVICE_UNAVAILABLE` | 503 | External service down |
 
 ---

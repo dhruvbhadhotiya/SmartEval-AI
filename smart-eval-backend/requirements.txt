@@ -1,8 +1,45 @@
-# Python dependencies
 # Flask and extensions
+Flask==3.0.0
+Flask-CORS==4.0.0
+Flask-JWT-Extended==4.6.0
+python-dotenv==1.0.0
+Werkzeug==3.0.1
+
 # MongoDB driver
+pymongo==4.6.1
+mongoengine==0.28.2
+
 # Redis client
-# Celery
-# OCR libraries
-# LLM integration
-# Testing libraries
+redis==5.0.1
+
+# Validation
+marshmallow==3.20.1
+email-validator==2.1.0
+
+# Security
+bcrypt==4.1.2
+cryptography==42.0.0
+
+# Celery (for async tasks)
+celery==5.3.4
+
+# HTTP requests
+requests==2.31.0
+httpx==0.26.0
+
+# OCR libraries (to be added in Sprint 4)
+# pytesseract==0.3.10
+# Pillow==10.2.0
+# opencv-python==4.9.0
+
+# LLM integration (to be added in Sprint 5)
+# openai==1.10.0
+
+# Development tools
+pytest==7.4.4
+pytest-cov==4.1.0
+black==24.1.1
+flake8==7.0.0
+
+# Production server
+gunicorn==21.2.0
