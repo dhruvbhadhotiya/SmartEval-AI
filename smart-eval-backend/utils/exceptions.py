@@ -43,3 +43,7 @@ class NotFoundError(SmartEvalException):
 class ConflictError(SmartEvalException):
     """Conflict error exception"""
     status_code = 409
+
+class ForbiddenError(SmartEvalException):
+    def __init__(self, message="Access forbidden"):
+        super().__init__(message, 403)

@@ -1,1 +1,0 @@
-// Teacher Grading Panel component

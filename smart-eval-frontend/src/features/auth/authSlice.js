@@ -1,1 +1,0 @@
-// Redux slice for authentication

@@ -5,6 +5,17 @@
 .env.local
 .env.*.local
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
 # Logs
 *.log
 logs/
@@ -12,20 +23,38 @@ logs/
 # OS files
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
+*.code-workspace
 
 # Database
 *.db
 *.sqlite
+*.sqlite3
 
-# Uploads
+# Uploads (local file storage)
 uploads/
 temp/
+*.tmp
+
+# Node modules (frontend)
+node_modules/
+
+# Build outputs
+build/
+dist/
+*.min.js
+*.min.css
 
 # Documentation builds
 *.pdf
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/

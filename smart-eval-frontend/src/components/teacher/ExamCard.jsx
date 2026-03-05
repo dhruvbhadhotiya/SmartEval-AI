@@ -1,1 +1,0 @@
-// Teacher Exam Card component

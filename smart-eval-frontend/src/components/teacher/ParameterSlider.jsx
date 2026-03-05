@@ -1,1 +1,0 @@
-// Teacher Parameter Slider component
