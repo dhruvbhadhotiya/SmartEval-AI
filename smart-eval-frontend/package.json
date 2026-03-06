@@ -4,13 +4,17 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@react-pdf-viewer/core": "^3.12.0",
+    "@react-pdf-viewer/default-layout": "^3.12.0",
     "@reduxjs/toolkit": "^2.0.1",
     "@types/node": "^20.10.6",
     "@types/react": "^18.2.46",
     "@types/react-dom": "^18.2.18",
     "axios": "^1.6.5",
+    "pdfjs-dist": "^3.4.120",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-dropzone": "^15.0.0",
     "react-redux": "^9.0.4",
     "react-router-dom": "^6.21.1",
     "typescript": "^5.3.3"
@@ -26,7 +30,7 @@
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
-    "vite": "^5.0.10"
+    "vite": "^7.3.1"
   },
   "browserslist": {
     "production": [

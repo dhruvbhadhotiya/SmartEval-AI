@@ -279,13 +279,11 @@ def upload_question_paper(exam_id):
         
         exam.question_paper.file_url = file_info['file_url']
         exam.question_paper.uploaded_at = file_info['uploaded_at']
+        exam.question_paper.file_size = file_info.get('file_size', 0)
         exam.save()
         
         return success_response(
-            data={
-                'file_url': file_info['file_url'],
-                'uploaded_at': file_info['uploaded_at'].isoformat()
-            },
+            data={'exam': exam.to_dict()},
             message="Question paper uploaded successfully"
         )
         
@@ -331,13 +329,12 @@ def upload_model_answer(exam_id):
             exam.model_answer = ModelAnswer()
         
         exam.model_answer.file_url = file_info['file_url']
+        exam.model_answer.uploaded_at = file_info['uploaded_at']
+        exam.model_answer.file_size = file_info.get('file_size', 0)
         exam.save()
         
         return success_response(
-            data={
-                'file_url': file_info['file_url'],
-                'uploaded_at': file_info['uploaded_at'].isoformat()
-            },
+            data={'exam': exam.to_dict()},
             message="Model answer uploaded successfully"
         )
         
@@ -349,3 +346,77 @@ def upload_model_answer(exam_id):
         return error_response(str(e), 403)
     except Exception as e:
         return error_response(f"Failed to upload model answer: {str(e)}", 500)
+
+
+@exam_bp.route('/<exam_id>/answer-sheets/bulk', methods=['POST'])
+@jwt_required()
+@role_required(['teacher'])
+def bulk_upload_answer_sheets(exam_id):
+    """
+    Bulk upload answer sheets for an exam
+    
+    POST /api/v1/exams/:exam_id/answer-sheets/bulk
+    Content-Type: multipart/form-data
+    Body: files[] (multiple PDF files)
+    """
+    try:
+        # Get current user
+        current_user_id = get_jwt_identity()
+        
+        # Verify exam ownership
+        exam = ExamService.get_exam_by_id(exam_id, teacher_id=current_user_id)
+        
+        # Check files in request
+        if 'files' not in request.files:
+            return error_response("No files provided", 400)
+        
+        files = request.files.getlist('files')
+        
+        if len(files) == 0:
+            return error_response("No files selected", 400)
+        
+        uploaded_files = []
+        failed_files = []
+        
+        # Process each file
+        for idx, file in enumerate(files):
+            try:
+                # Use index as temporary student ID (in real app, would extract from filename or metadata)
+                student_id = f"bulk_{idx+1}"
+                file_info = StorageService.save_answer_sheet(file, exam_id, student_id)
+                uploaded_files.append({
+                    'filename': file.filename,
+                    'file_url': file_info['file_url'],
+                    'file_size': file_info['file_size'],
+                    'uploaded_at': file_info['uploaded_at'].isoformat()
+                })
+            except Exception as e:
+                failed_files.append({
+                    'filename': file.filename,
+                    'error': str(e)
+                })
+        
+        # Update exam statistics
+        exam.statistics.total_sheets += len(uploaded_files)
+        exam.statistics.total_submissions += len(uploaded_files)  # Keep both in sync
+        exam.save()
+        
+        return success_response(
+            data={
+                'uploaded_count': len(uploaded_files),
+                'failed_count': len(failed_files),
+                'uploaded_files': uploaded_files,
+                'failed_files': failed_files,
+                'exam': exam.to_dict()
+            },
+            message=f"Successfully uploaded {len(uploaded_files)} out of {len(files)} files"
+        )
+        
+    except ValidationError as e:
+        return error_response(str(e), 400)
+    except NotFoundError as e:
+        return error_response(str(e), 404)
+    except ForbiddenError as e:
+        return error_response(str(e), 403)
+    except Exception as e:
+        return error_response(f"Failed to bulk upload answer sheets: {str(e)}", 500)

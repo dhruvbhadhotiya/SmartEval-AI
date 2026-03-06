@@ -8,7 +8,18 @@ export interface Exam {
   max_marks?: number
   duration_minutes?: number
   status: 'draft' | 'configuring' | 'grading' | 'reviewing' | 'published'
+  question_paper?: {
+    file_url: string
+    uploaded_at: string
+    file_size: number
+  }
+  model_answer?: {
+    file_url: string
+    uploaded_at: string
+    file_size: number
+  }
   statistics?: {
+    total_sheets?: number
     total_submissions: number
     graded: number
     reviewed: number
@@ -104,6 +115,20 @@ const examService = {
     formData.append('file', file)
 
     const response = await apiClient.post(`/api/v1/exams/${examId}/model-answer`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return Array.isArray(response.data) ? response.data[0] : response.data
+  },
+
+  async bulkUploadAnswerSheets(examId: string, files: File[]): Promise<any> {
+    const formData = new FormData()
+    files.forEach(file => {
+      formData.append('files', file)
+    })
+
+    const response = await apiClient.post(`/api/v1/exams/${examId}/answer-sheets/bulk`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

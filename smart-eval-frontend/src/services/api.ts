@@ -35,11 +35,18 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem('refresh_token')
         if (refreshToken) {
-          const response =await apiClient.post('/api/v1/auth/refresh', {}, {
-            headers: { Authorization: `Bearer ${refreshToken}` }
-          })
+          // Use axios directly to avoid the request interceptor
+          const response = await axios.post(
+            `${API_BASE_URL}/api/v1/auth/refresh`,
+            {},
+            {
+              headers: { Authorization: `Bearer ${refreshToken}` }
+            }
+          )
 
-          const { access_token } = response.data.data
+          // Handle Flask tuple response format
+          const actualResponse = Array.isArray(response.data) ? response.data[0] : response.data
+          const { access_token } = actualResponse.data
           localStorage.setItem('access_token', access_token)
 
           originalRequest.headers.Authorization = `Bearer ${access_token}`

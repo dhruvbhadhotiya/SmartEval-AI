@@ -25,6 +25,7 @@ class QuestionPaper(EmbeddedDocument):
     """Embedded document for question paper details"""
     file_url = StringField()
     uploaded_at = DateTimeField()
+    file_size = IntField(default=0)
 
 
 class ParsedAnswer(EmbeddedDocument):
@@ -39,6 +40,8 @@ class ParsedAnswer(EmbeddedDocument):
 class ModelAnswer(EmbeddedDocument):
     """Embedded document for model answer details"""
     file_url = StringField()
+    uploaded_at = DateTimeField()
+    file_size = IntField(default=0)
     parsed_answers = ListField(EmbeddedDocumentField(ParsedAnswer))
 
 
@@ -65,7 +68,8 @@ class GradingConfig(EmbeddedDocument):
 
 class ExamStatistics(EmbeddedDocument):
     """Embedded document for exam statistics"""
-    total_sheets = IntField(default=0)
+    total_sheets = IntField(default=0)  # Total answer sheets uploaded
+    total_submissions = IntField(default=0)  # Alias for total_sheets (for compatibility)
     graded = IntField(default=0)
     reviewed = IntField(default=0)
     average_score = FloatField(default=0.0)
@@ -145,13 +149,16 @@ class Exam(Document):
         if self.question_paper and self.question_paper.file_url:
             data['question_paper'] = {
                 'file_url': self.question_paper.file_url,
-                'uploaded_at': self.question_paper.uploaded_at.isoformat() if self.question_paper.uploaded_at else None
+                'uploaded_at': self.question_paper.uploaded_at.isoformat() if self.question_paper.uploaded_at else None,
+                'file_size': self.question_paper.file_size or 0
             }
         
         # Include model answer if exists
         if self.model_answer and self.model_answer.file_url:
             data['model_answer'] = {
                 'file_url': self.model_answer.file_url,
+                'uploaded_at': self.model_answer.uploaded_at.isoformat() if self.model_answer.uploaded_at else None,
+                'file_size': self.model_answer.file_size or 0,
                 'parsed_answers': [
                     {
                         'question_number': ans.question_number,
@@ -176,6 +183,7 @@ class Exam(Document):
         if include_stats and self.statistics:
             data['statistics'] = {
                 'total_sheets': self.statistics.total_sheets,
+                'total_submissions': self.statistics.total_submissions or self.statistics.total_sheets,  # Use total_submissions if set, otherwise total_sheets
                 'graded': self.statistics.graded,
                 'reviewed': self.statistics.reviewed,
                 'average_score': self.statistics.average_score,

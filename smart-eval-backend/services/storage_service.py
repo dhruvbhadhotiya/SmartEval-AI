@@ -60,6 +60,8 @@ class StorageService:
         if file_length > StorageService.MAX_FILE_SIZE:
             max_mb = StorageService.MAX_FILE_SIZE / (1024 * 1024)
             raise ValidationError(f"File too large. Maximum size: {max_mb}MB")
+        
+        return file_length  # Return file size for later use
     
     @staticmethod
     def save_file(file, folder_path, prefix=''):
@@ -78,6 +80,11 @@ class StorageService:
             ValidationError: If file save fails
         """
         try:
+            # Get file size first
+            file.seek(0, os.SEEK_END)
+            file_size = file.tell()
+            file.seek(0)  # Reset file pointer
+            
             # Generate unique filename
             original_filename = secure_filename(file.filename)
             ext = original_filename.rsplit('.', 1)[1].lower()
@@ -101,6 +108,7 @@ class StorageService:
                 'filename': filename,
                 'original_filename': original_filename,
                 'saved_path': file_path,
+                'file_size': file_size,
                 'uploaded_at': datetime.utcnow()
             }
             

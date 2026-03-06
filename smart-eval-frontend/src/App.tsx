@@ -1,9 +1,10 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from './app/hooks';
 import { getCurrentUser } from './features/auth/authSlice';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/teacher/DashboardPage';
+import ExamDetailsPage from './pages/teacher/ExamDetailsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -47,6 +48,15 @@ function App() {
         element={
           <ProtectedRoute requiredRole="teacher">
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      
+      <Route
+        path="/dashboard/exams/:examId"
+        element={
+          <ProtectedRoute requiredRole="teacher">
+            <ExamDetailsPage />
           </ProtectedRoute>
         }
       />

@@ -1,6 +1,7 @@
 import { Exam } from '../../services/examService';
 import { useAppDispatch } from '../../app/hooks';
 import { deleteExam, updateExamStatus } from '../../features/exams/examsSlice';
+import { useNavigate } from 'react-router-dom';
 
 interface ExamCardProps {
   exam: Exam;
@@ -8,6 +9,7 @@ interface ExamCardProps {
 
 const ExamCard: React.FC<ExamCardProps> = ({ exam }) => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -109,6 +111,7 @@ const ExamCard: React.FC<ExamCardProps> = ({ exam }) => {
         )}
         <div className="flex space-x-2">
           <button
+            onClick={() => navigate(`/dashboard/exams/${exam.id}`)}
             className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm font-medium"
           >
             View Details

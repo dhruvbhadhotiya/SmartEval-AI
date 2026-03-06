@@ -1,7 +1,7 @@
 """
 Flask app factory
 """
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 import os
 
 from app.config import config
@@ -44,6 +44,13 @@ def create_app(config_name=None):
             'service': 'smart-eval-api',
             'version': '1.0.0'
         }), 200
+    
+    # Serve uploaded files
+    @app.route('/uploads/<path:filename>', methods=['GET'])
+    def serve_upload(filename):
+        """Serve uploaded files from the uploads directory"""
+        uploads_dir = os.path.join(app.root_path, '..', 'uploads')
+        return send_from_directory(uploads_dir, filename)
     
     return app
 

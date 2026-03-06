@@ -58,3 +58,5 @@ dist/
 .coverage
 htmlcov/
 coverage/
+
+/PULL_REQUEST.md
