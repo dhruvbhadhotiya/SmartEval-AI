@@ -44,36 +44,35 @@ def register():
             'role': user.role,
             'profile': user.profile,
             'created_at': user.created_at.isoformat()
-        }, status_code=201))
+        })), 201
     
     except ValidationError as e:
         return jsonify(error_response(
-            'VALIDATION_ERROR',
-            'Invalid input data',
-            e.messages,
-            400
-        ))
+            message='Invalid input data',
+            code='VALIDATION_ERROR',
+            details=e.messages
+        )), 400
     
     except CustomValidationError as e:
         return jsonify(error_response(
-            'VALIDATION_ERROR',
-            e.message,
-            status_code=400
-        ))
+            message=e.message,
+            code='VALIDATION_ERROR'
+        )), 400
     
     except ConflictError as e:
         return jsonify(error_response(
-            'CONFLICT',
-            e.message,
-            status_code=409
-        ))
+            message=e.message,
+            code='CONFLICT'
+        )), 409
     
     except Exception as e:
+        print(f"Registration error: {str(e)}")  # Debug logging
+        import traceback
+        traceback.print_exc()
         return jsonify(error_response(
-            'INTERNAL_ERROR',
-            'An unexpected error occurred',
-            status_code=500
-        ))
+            message='An unexpected error occurred',
+            code='INTERNAL_ERROR'
+        )), 500
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -99,25 +98,22 @@ def login():
     
     except ValidationError as e:
         return jsonify(error_response(
-            'VALIDATION_ERROR',
-            'Invalid input data',
-            e.messages,
-            400
-        ))
+            message='Invalid input data',
+            code='VALIDATION_ERROR',
+            details=e.messages
+        )), 400
     
     except AuthenticationError as e:
         return jsonify(error_response(
-            'UNAUTHORIZED',
-            e.message,
-            status_code=401
-        ))
+            message=e.message,
+            code='UNAUTHORIZED'
+        )), 401
     
     except Exception as e:
         return jsonify(error_response(
-            'INTERNAL_ERROR',
-            'An unexpected error occurred',
-            status_code=500
-        ))
+            message='An unexpected error occurred',
+            code='INTERNAL_ERROR'
+        )), 500
 
 
 @auth_bp.route('/refresh', methods=['POST'])
@@ -140,17 +136,15 @@ def refresh():
     
     except AuthenticationError as e:
         return jsonify(error_response(
-            'UNAUTHORIZED',
-            e.message,
-            status_code=401
-        ))
+            message=e.message,
+            code='UNAUTHORIZED'
+        )), 401
     
     except Exception as e:
         return jsonify(error_response(
-            'INTERNAL_ERROR',
-            'An unexpected error occurred',
-            status_code=500
-        ))
+            message='An unexpected error occurred',
+            code='INTERNAL_ERROR'
+        )), 500
 
 
 @auth_bp.route('/logout', methods=['POST'])
@@ -184,16 +178,14 @@ def get_current_user():
         
         if not user:
             return jsonify(error_response(
-                'NOT_FOUND',
-                'User not found',
-                status_code=404
-            ))
+                message='User not found',
+                code='NOT_FOUND'
+            )), 404
         
         return jsonify(success_response(user.to_dict()))
     
     except Exception as e:
         return jsonify(error_response(
-            'INTERNAL_ERROR',
-            'An unexpected error occurred',
-            status_code=500
-        ))
+            message='An unexpected error occurred',
+            code='INTERNAL_ERROR'
+        )), 500

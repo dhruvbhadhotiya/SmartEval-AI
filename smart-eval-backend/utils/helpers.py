@@ -65,7 +65,7 @@ def format_datetime(dt):
     return dt.isoformat() + 'Z'
 
 
-def success_response(data=None, message=None, meta=None, status_code=200):
+def success_response(data=None, message=None, meta=None):
     """
     Create standardized success response
     
@@ -73,10 +73,9 @@ def success_response(data=None, message=None, meta=None, status_code=200):
         data: Response data
         message: Success message (optional)
         meta: Metadata (pagination, etc.)
-        status_code: HTTP status code
     
     Returns:
-        Tuple (response_dict, status_code)
+        Dictionary with success response
     """
     response = {
         'success': True,
@@ -89,21 +88,20 @@ def success_response(data=None, message=None, meta=None, status_code=200):
     if meta:
         response['meta'] = meta
     
-    return response, status_code
+    return response
 
 
-def error_response(message, status_code=400, code=None, details=None):
+def error_response(message, code=None, details=None):
     """
     Create standardized error response
     
     Args:
         message: Error message
-        status_code: HTTP status code
         code: Error code (optional)
         details: Additional error details
     
     Returns:
-        Tuple (response_dict, status_code)
+        Dictionary with error response
     """
     response = {
         'success': False,
@@ -116,4 +114,4 @@ def error_response(message, status_code=400, code=None, details=None):
     if details:
         response['error']['details'] = details
     
-    return response, status_code
+    return response
