@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { fetchExamById, deleteExam, updateExamStatus, uploadQuestionPaper, uploadModelAnswer } from '../../features/exams/examsSlice';
 import examService from '../../services/examService';
+import gradingService, { AnswerSheet } from '../../services/gradingService';
 import FileUploadZone from '../../components/teacher/FileUploadZone';
 import UpdateExamModal from '../../components/teacher/UpdateExamModal';
 import BulkUploadModal from '../../components/teacher/BulkUploadModal';
@@ -18,12 +19,55 @@ const ExamDetailsPage: React.FC = () => {
   const [uploadingMA, setUploadingMA] = useState(false);
   const [qpProgress, setQpProgress] = useState(0);
   const [maProgress, setMaProgress] = useState(0);
+  const [answerSheets, setAnswerSheets] = useState<AnswerSheet[]>([]);
+  const [isProcessingOCR, setIsProcessingOCR] = useState(false);
+  const [ocrMessage, setOcrMessage] = useState<string | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState<AnswerSheet | null>(null);
 
   useEffect(() => {
     if (examId) {
       dispatch(fetchExamById(examId));
+      loadAnswerSheets();
     }
   }, [dispatch, examId]);
+
+  const loadAnswerSheets = async () => {
+    if (!examId) return;
+    try {
+      const response = await gradingService.getAnswerSheets(examId);
+      setAnswerSheets(response.data || []);
+    } catch {
+      // Sheets may not exist yet
+      setAnswerSheets([]);
+    }
+  };
+
+  const handleRunOCR = async () => {
+    if (!examId) return;
+    setIsProcessingOCR(true);
+    setOcrMessage(null);
+    try {
+      const response = await gradingService.startOCRProcessing(examId);
+      const result = response.data;
+      setOcrMessage(`OCR complete: ${result.processed} processed, ${result.failed} failed out of ${result.total}`);
+      await loadAnswerSheets();
+      await dispatch(fetchExamById(examId));
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || error.response?.data?.message || 'OCR processing failed';
+      setOcrMessage(`Error: ${msg}`);
+    } finally {
+      setIsProcessingOCR(false);
+    }
+  };
+
+  const handleProcessSingleSheet = async (sheetId: string) => {
+    try {
+      await gradingService.processSheet(sheetId);
+      await loadAnswerSheets();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to process sheet');
+    }
+  };
 
   const handleQuestionPaperUpload = async (file: File) => {
     if (!examId) return;
@@ -111,6 +155,7 @@ const ExamDetailsPage: React.FC = () => {
       
       // Refresh exam data to update statistics
       await dispatch(fetchExamById(examId));
+      await loadAnswerSheets();
     } catch (error: any) {
       console.error('Bulk upload failed:', error);
       const errorMsg = error.response?.data?.message || 'Failed to upload answer sheets';
@@ -128,6 +173,27 @@ const ExamDetailsPage: React.FC = () => {
       published: 'bg-green-100 text-green-800',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  const getSheetStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      uploaded: 'bg-gray-100 text-gray-800',
+      processing: 'bg-yellow-100 text-yellow-800',
+      ocr_completed: 'bg-blue-100 text-blue-800',
+      graded: 'bg-green-100 text-green-800',
+      reviewed: 'bg-purple-100 text-purple-800',
+      failed: 'bg-red-100 text-red-800',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  const handleViewOCR = async (sheetId: string) => {
+    try {
+      const response = await gradingService.getAnswerSheet(sheetId);
+      setSelectedSheet(response.data);
+    } catch {
+      alert('Failed to load OCR results');
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -260,29 +326,111 @@ const ExamDetailsPage: React.FC = () => {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">Answer Sheets</h2>
-                <button 
-                  onClick={() => setIsBulkUploadOpen(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                  Bulk Upload
-                </button>
+                <div className="flex space-x-2">
+                  {answerSheets.length > 0 && (
+                    <button
+                      onClick={handleRunOCR}
+                      disabled={isProcessingOCR}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                    >
+                      {isProcessingOCR ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          <span>Processing...</span>
+                        </>
+                      ) : (
+                        <span>Run OCR</span>
+                      )}
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setIsBulkUploadOpen(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  >
+                    Bulk Upload
+                  </button>
+                </div>
               </div>
-              {(currentExam.statistics?.total_sheets || 0) > 0 ? (
-                <div className="py-8">
-                  <div className="text-center mb-6">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-3">
-                      <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-3xl font-bold text-gray-900 mb-2">
-                      {currentExam.statistics?.total_sheets || 0}
-                    </h3>
-                    <p className="text-gray-600">Answer sheets uploaded</p>
-                    <p className="text-sm text-gray-500 mt-2">
-                      Ready for grading • {currentExam.statistics?.graded || 0} graded
-                    </p>
+
+              {/* OCR Status Message */}
+              {ocrMessage && (
+                <div className={`mb-4 p-3 rounded-md text-sm ${ocrMessage.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                  {ocrMessage}
+                </div>
+              )}
+
+              {answerSheets.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">File</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uploaded</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {answerSheets.map((sheet, idx) => (
+                        <tr key={sheet.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">{idx + 1}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 font-mono text-xs truncate max-w-[200px]">
+                            {sheet.original_file?.url?.split('/').pop() || 'Unknown'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getSheetStatusColor(sheet.status)}`}>
+                              {sheet.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">
+                            {sheet.created_at ? new Date(sheet.created_at).toLocaleString() : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-sm space-x-2">
+                            {sheet.status === 'uploaded' && (
+                              <button
+                                onClick={() => handleProcessSingleSheet(sheet.id)}
+                                className="text-green-600 hover:text-green-800 font-medium"
+                              >
+                                Run OCR
+                              </button>
+                            )}
+                            {sheet.status === 'ocr_completed' && (
+                              <button
+                                onClick={() => handleViewOCR(sheet.id)}
+                                className="text-blue-600 hover:text-blue-800 font-medium"
+                              >
+                                View Text
+                              </button>
+                            )}
+                            {sheet.status === 'failed' && (
+                              <button
+                                onClick={() => handleProcessSingleSheet(sheet.id)}
+                                className="text-orange-600 hover:text-orange-800 font-medium"
+                              >
+                                Retry
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (currentExam.statistics?.total_sheets || 0) > 0 ? (
+                <div className="text-center py-8">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-3">
+                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
                   </div>
+                  <h3 className="text-3xl font-bold text-gray-900 mb-2">
+                    {currentExam.statistics?.total_sheets || 0}
+                  </h3>
+                  <p className="text-gray-600">Answer sheets uploaded</p>
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
@@ -416,6 +564,44 @@ const ExamDetailsPage: React.FC = () => {
         onClose={() => setIsBulkUploadOpen(false)}
         onUpload={handleBulkUpload}
       />
+
+      {/* OCR Result Viewer Modal */}
+      {selectedSheet && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold">OCR Extracted Text</h3>
+              <button
+                onClick={() => setSelectedSheet(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {selectedSheet.ocr_results && selectedSheet.ocr_results.length > 0 ? (
+                selectedSheet.ocr_results.map((ocr, idx) => (
+                  <div key={idx} className="mb-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium text-gray-700">Page {ocr.page_number}</span>
+                      <span className="text-xs text-gray-500">
+                        Confidence: {(ocr.confidence * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <pre className="bg-gray-50 p-4 rounded-md text-sm whitespace-pre-wrap border border-gray-200">
+                      {ocr.text || 'No text extracted'}
+                    </pre>
+                  </div>
+                ))
+              ) : (
+                <p className="text-gray-500 text-center py-8">No OCR results available</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

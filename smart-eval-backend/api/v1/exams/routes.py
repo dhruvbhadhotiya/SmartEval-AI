@@ -19,6 +19,7 @@ from utils.decorators import role_required
 from utils.helpers import success_response, error_response
 from utils.exceptions import ValidationError, NotFoundError, ForbiddenError
 from models.exam import QuestionPaper, ModelAnswer
+from models.answer_sheet import AnswerSheet as AnswerSheetDoc, OriginalFile
 
 
 exam_bp = Blueprint('exams', __name__, url_prefix='/exams')
@@ -381,10 +382,24 @@ def bulk_upload_answer_sheets(exam_id):
         # Process each file
         for idx, file in enumerate(files):
             try:
-                # Use index as temporary student ID (in real app, would extract from filename or metadata)
                 student_id = f"bulk_{idx+1}"
                 file_info = StorageService.save_answer_sheet(file, exam_id, student_id)
+
+                # Create AnswerSheet document in MongoDB for OCR pipeline
+                sheet_doc = AnswerSheetDoc(
+                    exam_id=exam,
+                    student_id=exam.teacher_id,  # placeholder until student accounts exist
+                    original_file=OriginalFile(
+                        url=file_info['file_url'],
+                        pages=1,
+                        uploaded_at=file_info['uploaded_at']
+                    ),
+                    status='uploaded'
+                )
+                sheet_doc.save()
+
                 uploaded_files.append({
+                    'id': str(sheet_doc.id),
                     'filename': file.filename,
                     'file_url': file_info['file_url'],
                     'file_size': file_info['file_size'],
