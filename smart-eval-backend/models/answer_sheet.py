@@ -63,7 +63,7 @@ class AnswerSheet(Document):
     
     # Status tracking
     status = StringField(
-        choices=['uploaded', 'processing', 'graded', 'reviewed', 'challenged'],
+        choices=['uploaded', 'processing', 'ocr_completed', 'graded', 'reviewed', 'challenged', 'failed'],
         default='uploaded'
     )
     
@@ -148,7 +148,7 @@ class AnswerSheet(Document):
     
     def update_status(self, new_status):
         """Update answer sheet status"""
-        valid_statuses = ['uploaded', 'processing', 'graded', 'reviewed', 'challenged']
+        valid_statuses = ['uploaded', 'processing', 'ocr_completed', 'graded', 'reviewed', 'challenged', 'failed']
         if new_status not in valid_statuses:
             raise ValueError(f"Invalid status: {new_status}")
         

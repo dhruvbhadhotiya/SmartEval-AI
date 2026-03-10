@@ -27,12 +27,11 @@ celery==5.3.4
 requests==2.31.0
 httpx==0.26.0
 
-# OCR libraries (to be added in Sprint 4)
-# pytesseract==0.3.10
-# Pillow==10.2.0
-# opencv-python==4.9.0
+# OCR / Image handling
+Pillow==10.2.0
+PyMuPDF==1.24.0
 
-# LLM integration (to be added in Sprint 5)
+# LLM integration (Sprint 5)
 # openai==1.10.0
 
 # Development tools
