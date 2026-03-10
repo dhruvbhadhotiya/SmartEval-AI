@@ -4,12 +4,14 @@ LLM Service (Sprint 5 Placeholder)
 Will handle grading analysis by comparing OCR-extracted student answers
 against model answers using an LLM.
 
-Supports two providers (same abstraction as OCR service):
-  - 'ollama'  : Ollama native API
-  - 'openai'  : OpenAI-compatible API (LM Studio, vLLM, etc.)
+Supports providers (same abstraction as OCR service):
+  - 'ollama'      : Ollama native API
+  - 'openai'      : OpenAI-compatible API (LM Studio, vLLM, etc.)
+  - 'lmstudio'    : LM Studio native API
+  - 'openrouter'  : OpenRouter API (cloud, free tier available)
 
 Configure via environment variables:
-  LLM_PROVIDER, LLM_API_URL, LLM_MODEL
+  LLM_PROVIDER, LLM_API_URL, LLM_MODEL, OPENROUTER_API_KEY
 """
 
 

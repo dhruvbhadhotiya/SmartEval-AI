@@ -35,16 +35,18 @@ Implement OCR text extraction from answer sheet images/PDFs using configurable V
 ### 2. OCR Service (SEAI-013)
 **File:** `smart-eval-backend/services/ocr_service.py` (~240 lines)
 
-**Three Provider Abstraction:**
+**Three → Four Provider Abstraction:**
 
 | Provider | Endpoint | Image Format | Config Value |
 |---|---|---|---|
 | `ollama` | `POST /api/chat` | `images[]` (base64 array) | `VISION_PROVIDER=ollama` |
 | `openai` | `POST /v1/chat/completions` | `image_url` (data URL) | `VISION_PROVIDER=openai` |
 | `lmstudio` | `POST /api/v1/chat` | `input[]` with `data_url` | `VISION_PROVIDER=lmstudio` |
+| `openrouter` | `POST /chat/completions` | `image_url` (data URL) + API key | `VISION_PROVIDER=openrouter` |
 
 **Features:**
 - ✅ Provider-agnostic design via environment variables
+- ✅ Four providers: Ollama, OpenAI-compatible, LM Studio, OpenRouter
 - ✅ PDF-to-image conversion using PyMuPDF at 200 DPI
 - ✅ Multi-page PDF support (each page processed individually)
 - ✅ Per-page OCR results returned as list
@@ -312,10 +314,14 @@ VISION_API_URL=http://127.0.0.1:1234
 VISION_MODEL=lightonocr-2-1b-ocr-soup
 
 # AI LLM Model (Grading - Sprint 5)
-# LLM_PROVIDER: "ollama" or "openai"
+# LLM_PROVIDER: "ollama", "openai", "lmstudio", or "openrouter"
 LLM_PROVIDER=ollama
 LLM_API_URL=http://localhost:11434/api/chat
 LLM_MODEL=llama3
+
+# OpenRouter (cloud API - free tier available)
+# Get your key from: https://openrouter.ai/keys
+OPENROUTER_API_KEY=
 ```
 
 ### 10. Frontend Grading Service (SEAI-019)
@@ -502,7 +508,7 @@ home = C:\Users\Asus\AppData\Local\Programs\Python\Python313
 ## 🔑 Key Features Implemented
 
 ### OCR Pipeline
-- **Multi-provider Vision model** support (Ollama, OpenAI-compatible, LM Studio)
+- **Multi-provider Vision model** support (Ollama, OpenAI-compatible, LM Studio, OpenRouter)
 - **PDF-to-image conversion** at 200 DPI via PyMuPDF
 - **Multi-page processing** — each page OCR'd individually
 - **Per-page result storage** in MongoDB (`ocr_results[]`)
@@ -589,8 +595,9 @@ home = C:\Users\Asus\AppData\Local\Programs\Python\Python313
         ▼
 [Provider Dispatch]
    ├── ollama:    POST /api/chat          (images[] field)
-   ├── openai:    POST /v1/chat/completions (image_url)
-   └── lmstudio:  POST /api/v1/chat       (input[] with data_url)
+   ├── openai:      POST /v1/chat/completions (image_url)
+   ├── openrouter:   POST /chat/completions    (image_url + API key)
+   └── lmstudio:     POST /api/v1/chat          (input[] with data_url)
         │
         ▼
 [Per-page OCR text response]
@@ -682,6 +689,17 @@ AnswerSheet
    VISION_PROVIDER=lmstudio
    VISION_API_URL=http://127.0.0.1:1234
    VISION_MODEL=lightonocr-2-1b-ocr-soup
+   ```
+
+### OpenRouter Setup (Cloud)
+1. Sign up at [openrouter.ai](https://openrouter.ai) (free tier available)
+2. Create an API key at https://openrouter.ai/keys
+3. Set in `.env`:
+   ```env
+   VISION_PROVIDER=openrouter
+   VISION_API_URL=https://openrouter.ai/api/v1
+   VISION_MODEL=google/gemini-2.0-flash-exp:free
+   OPENROUTER_API_KEY=sk-or-...
    ```
 
 ### Ollama Setup

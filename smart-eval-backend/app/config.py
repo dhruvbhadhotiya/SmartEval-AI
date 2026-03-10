@@ -46,14 +46,17 @@ class Config:
     CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
     
     # AI Vision Model (OCR)
-    VISION_PROVIDER = os.getenv('VISION_PROVIDER', 'ollama')  # 'ollama' or 'openai'
+    VISION_PROVIDER = os.getenv('VISION_PROVIDER', 'ollama')  # 'ollama', 'openai', 'lmstudio', 'openrouter'
     VISION_API_URL = os.getenv('VISION_API_URL', 'http://localhost:11434/api/chat')
     VISION_MODEL = os.getenv('VISION_MODEL', 'llava')
     
     # AI LLM Model (Grading - Sprint 5)
-    LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'ollama')  # 'ollama' or 'openai'
+    LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'ollama')  # 'ollama', 'openai', 'lmstudio', 'openrouter'
     LLM_API_URL = os.getenv('LLM_API_URL', 'http://localhost:11434/api/chat')
     LLM_MODEL = os.getenv('LLM_MODEL', 'llama3')
+    
+    # OpenRouter (cloud API - used when VISION_PROVIDER or LLM_PROVIDER is 'openrouter')
+    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 
 
 class DevelopmentConfig(Config):

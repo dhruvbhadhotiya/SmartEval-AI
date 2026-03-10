@@ -2,13 +2,14 @@
 OCR Service
 
 Extracts text from answer sheet images using a Vision model.
-Supports three providers:
-  - 'ollama'    : Ollama native API (POST /api/chat with images[] field)
-  - 'openai'    : OpenAI-compatible API (POST /v1/chat/completions)
-  - 'lmstudio'  : LM Studio native API (POST /api/v1/chat with input[] field)
+Supports four providers:
+  - 'ollama'      : Ollama native API (POST /api/chat with images[] field)
+  - 'openai'      : OpenAI-compatible API (POST /v1/chat/completions)
+  - 'lmstudio'    : LM Studio native API (POST /api/v1/chat with input[] field)
+  - 'openrouter'  : OpenRouter API (OpenAI-compatible with API key)
 
 Configure via environment variables:
-  VISION_PROVIDER, VISION_API_URL, VISION_MODEL
+  VISION_PROVIDER, VISION_API_URL, VISION_MODEL, OPENROUTER_API_KEY
 """
 
 import base64
@@ -70,7 +71,10 @@ class OCRService:
         results = []
         for idx, (image_b64, mime_type) in enumerate(pages_b64):
             print(f"[OCRService] Processing page {idx + 1}/{len(pages_b64)}")
-            if provider == 'openai':
+            if provider == 'openrouter':
+                api_key = current_app.config.get('OPENROUTER_API_KEY')
+                text = OCRService._call_openrouter(api_url, model, image_b64, mime_type, api_key)
+            elif provider == 'openai':
                 text = OCRService._call_openai(api_url, model, image_b64, mime_type)
             elif provider == 'lmstudio':
                 text = OCRService._call_lmstudio(api_url, model, image_b64, mime_type)
@@ -172,6 +176,57 @@ class OCRService:
             )
         except requests.exceptions.Timeout:
             raise ValidationError("Vision model request timed out (10 min).")
+        except Exception as e:
+            raise ValidationError(f"OCR extraction failed: {str(e)}")
+
+    @staticmethod
+    def _call_openrouter(api_url: str, model: str, image_b64: str, mime_type: str, api_key: str) -> str:
+        """Call OpenRouter API (OpenAI-compatible with API key auth)."""
+        if not api_key:
+            raise ValidationError("OPENROUTER_API_KEY is required for OpenRouter provider.")
+
+        url = api_url.rstrip('/') + '/chat/completions'
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Extract all handwritten and printed text from this image accurately. "
+                                "Return only the extracted text, no commentary."
+                            )
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{image_b64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 7096,
+            "stream": False
+        }
+
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=600)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except requests.exceptions.ConnectionError:
+            raise ValidationError("Cannot connect to OpenRouter API. Check your internet connection.")
+        except requests.exceptions.Timeout:
+            raise ValidationError("OpenRouter request timed out (10 min).")
         except Exception as e:
             raise ValidationError(f"OCR extraction failed: {str(e)}")
 
