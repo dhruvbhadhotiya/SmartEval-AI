@@ -9,6 +9,7 @@ from marshmallow import ValidationError as MarshmallowValidationError
 
 from services.exam_service import ExamService
 from services.storage_service import StorageService
+from services.ocr_service import OCRService
 from api.v1.exams.schemas import (
     CreateExamSchema,
     UpdateExamSchema,
@@ -18,7 +19,7 @@ from api.v1.exams.schemas import (
 from utils.decorators import role_required
 from utils.helpers import success_response, error_response
 from utils.exceptions import ValidationError, NotFoundError, ForbiddenError
-from models.exam import QuestionPaper, ModelAnswer
+from models.exam import QuestionPaper, ModelAnswer, ParsedAnswer, GradingConfig
 from models.answer_sheet import AnswerSheet as AnswerSheetDoc, OriginalFile
 
 
@@ -435,3 +436,222 @@ def bulk_upload_answer_sheets(exam_id):
         return error_response(str(e), 403)
     except Exception as e:
         return error_response(f"Failed to bulk upload answer sheets: {str(e)}", 500)
+
+
+# ------------------------------------------------------------------
+# Model Answer (parsed) & Grading Config — Sprint 5
+# ------------------------------------------------------------------
+
+@exam_bp.route('/<exam_id>/model-answer/parsed', methods=['POST'])
+@jwt_required()
+@role_required(['teacher'])
+def save_parsed_model_answers(exam_id):
+    """
+    Save structured per-question model answers for LLM grading.
+
+    POST /api/v1/exams/:exam_id/model-answer/parsed
+    Body: { "answers": [ {question_number, max_marks, answer_text, keywords[], concepts[]} ] }
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        exam = ExamService.get_exam_by_id(exam_id, teacher_id=current_user_id)
+
+        data = request.get_json()
+        if not data or 'answers' not in data:
+            return error_response("Request body must contain 'answers' array", 400)
+
+        answers = data['answers']
+        if not isinstance(answers, list) or len(answers) == 0:
+            return error_response("'answers' must be a non-empty array", 400)
+
+        parsed_list = []
+        for ans in answers:
+            qn = ans.get('question_number')
+            mm = ans.get('max_marks')
+            if qn is None or mm is None:
+                return error_response("Each answer must have question_number and max_marks", 400)
+
+            parsed_list.append(ParsedAnswer(
+                question_number=int(qn),
+                max_marks=float(mm),
+                answer_text=ans.get('answer_text', ''),
+                keywords=ans.get('keywords', []),
+                concepts=ans.get('concepts', []),
+            ))
+
+        if not exam.model_answer:
+            from datetime import datetime
+            exam.model_answer = ModelAnswer(uploaded_at=datetime.utcnow())
+
+        exam.model_answer.parsed_answers = parsed_list
+        exam.save()
+
+        return success_response(
+            data={'exam': exam.to_dict()},
+            message=f"Saved {len(parsed_list)} parsed model answers"
+        )
+
+    except ValidationError as e:
+        return error_response(str(e), 400)
+    except NotFoundError as e:
+        return error_response(str(e), 404)
+    except ForbiddenError as e:
+        return error_response(str(e), 403)
+    except Exception as e:
+        return error_response(f"Failed to save model answers: {str(e)}", 500)
+
+
+@exam_bp.route('/<exam_id>/grading-config', methods=['PUT'])
+@jwt_required()
+@role_required(['teacher'])
+def update_grading_config(exam_id):
+    """
+    Update grading configuration for an exam.
+
+    PUT /api/v1/exams/:exam_id/grading-config
+    Body: { strictness: 'lenient'|'moderate'|'strict', keyword_mode: 'exact'|'synonyms' }
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        exam = ExamService.get_exam_by_id(exam_id, teacher_id=current_user_id)
+
+        data = request.get_json()
+        if not data:
+            return error_response("Request body is required", 400)
+
+        if not exam.grading_config:
+            exam.grading_config = GradingConfig()
+
+        strictness = data.get('strictness')
+        if strictness:
+            if strictness not in ('lenient', 'moderate', 'strict'):
+                return error_response("strictness must be 'lenient', 'moderate', or 'strict'", 400)
+            exam.grading_config.strictness = strictness
+
+        keyword_mode = data.get('keyword_mode')
+        if keyword_mode:
+            if keyword_mode not in ('exact', 'synonyms'):
+                return error_response("keyword_mode must be 'exact' or 'synonyms'", 400)
+            exam.grading_config.keyword_mode = keyword_mode
+
+        holistic_params = data.get('holistic_params')
+        if holistic_params is not None:
+            exam.grading_config.holistic_params = holistic_params
+
+        exam.save()
+
+        return success_response(
+            data={'exam': exam.to_dict()},
+            message="Grading configuration updated"
+        )
+
+    except ValidationError as e:
+        return error_response(str(e), 400)
+    except NotFoundError as e:
+        return error_response(str(e), 404)
+    except ForbiddenError as e:
+        return error_response(str(e), 403)
+    except Exception as e:
+        return error_response(f"Failed to update grading config: {str(e)}", 500)
+
+
+@exam_bp.route('/<exam_id>/model-answer/extract', methods=['POST'])
+@jwt_required()
+@role_required(['teacher'])
+def extract_model_answer_text(exam_id):
+    """
+    Run OCR on the uploaded model answer PDF to extract text.
+
+    POST /api/v1/exams/:exam_id/model-answer/extract
+    Returns: { "pages": [ { page_number, text, confidence } ] }
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        exam = ExamService.get_exam_by_id(exam_id, teacher_id=current_user_id)
+
+        if not exam.model_answer or not exam.model_answer.file_url:
+            return error_response("No model answer PDF uploaded for this exam", 400)
+
+        import os
+        from flask import current_app
+        file_url = exam.model_answer.file_url
+        upload_folder = current_app.config.get('UPLOAD_FOLDER', './uploads')
+        relative = file_url.lstrip('/')
+        if relative.startswith('uploads/'):
+            relative = relative[len('uploads/'):]
+        abs_path = os.path.abspath(os.path.join(upload_folder, relative))
+
+        page_results = OCRService.extract_text(abs_path)
+
+        # Serialize datetime objects for JSON response
+        for page in page_results:
+            if hasattr(page.get('processed_at', ''), 'isoformat'):
+                page['processed_at'] = page['processed_at'].isoformat()
+
+        from flask import jsonify as jfy
+        return jfy(success_response(
+            data={'pages': page_results},
+            message=f"Extracted text from {len(page_results)} page(s)"
+        ))
+
+    except ValidationError as e:
+        print(f"[ExtractModelAnswer] ValidationError: {e}")
+        return error_response(f"OCR extraction failed: {str(e)}", 500)
+    except NotFoundError as e:
+        return error_response(str(e), 404)
+    except ForbiddenError as e:
+        return error_response(str(e), 403)
+    except Exception as e:
+        print(f"[ExtractModelAnswer] Error: {e}")
+        return error_response(f"Failed to extract model answer text: {str(e)}", 500)
+
+
+@exam_bp.route('/<exam_id>/question-paper/extract', methods=['POST'])
+@jwt_required()
+@role_required(['teacher'])
+def extract_question_paper_text(exam_id):
+    """
+    Run OCR on the uploaded question paper PDF to extract text.
+
+    POST /api/v1/exams/:exam_id/question-paper/extract
+    Returns: { "pages": [ { page_number, text, confidence } ] }
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        exam = ExamService.get_exam_by_id(exam_id, teacher_id=current_user_id)
+
+        if not exam.question_paper or not exam.question_paper.file_url:
+            return error_response("No question paper PDF uploaded for this exam", 400)
+
+        import os
+        from flask import current_app
+        file_url = exam.question_paper.file_url
+        upload_folder = current_app.config.get('UPLOAD_FOLDER', './uploads')
+        relative = file_url.lstrip('/')
+        if relative.startswith('uploads/'):
+            relative = relative[len('uploads/'):]
+        abs_path = os.path.abspath(os.path.join(upload_folder, relative))
+
+        page_results = OCRService.extract_text(abs_path)
+
+        # Serialize datetime objects for JSON response
+        for page in page_results:
+            if hasattr(page.get('processed_at', ''), 'isoformat'):
+                page['processed_at'] = page['processed_at'].isoformat()
+
+        from flask import jsonify as jfy
+        return jfy(success_response(
+            data={'pages': page_results},
+            message=f"Extracted text from {len(page_results)} page(s)"
+        ))
+
+    except ValidationError as e:
+        print(f"[ExtractQuestionPaper] ValidationError: {e}")
+        return error_response(f"OCR extraction failed: {str(e)}", 500)
+    except NotFoundError as e:
+        return error_response(str(e), 404)
+    except ForbiddenError as e:
+        return error_response(str(e), 403)
+    except Exception as e:
+        print(f"[ExtractQuestionPaper] Error: {e}")
+        return error_response(f"Failed to extract question paper text: {str(e)}", 500)

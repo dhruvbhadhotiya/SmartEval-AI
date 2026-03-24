@@ -3,6 +3,7 @@ Utility helper functions
 """
 import re
 from datetime import datetime
+from flask import jsonify
 
 
 def validate_email(email):
@@ -93,25 +94,37 @@ def success_response(data=None, message=None, meta=None):
 
 def error_response(message, code=None, details=None):
     """
-    Create standardized error response
-    
+    Create standardized error response.
+
+    Supports two calling styles:
+      1) error_response("msg", 404)       — returns (jsonify, http_status)
+      2) error_response("msg", code='X')  — returns plain dict (caller wraps in jsonify)
+
     Args:
         message: Error message
-        code: Error code (optional)
+        code: Numeric HTTP status *or* string error code
         details: Additional error details
-    
-    Returns:
-        Dictionary with error response
     """
+    # Determine if code is a numeric HTTP status or a string error code
+    if isinstance(code, int):
+        http_status = code
+        error_code = code
+    else:
+        http_status = None
+        error_code = code or 'ERROR'
+
     response = {
         'success': False,
         'error': {
-            'code': code or 'ERROR',
+            'code': error_code,
             'message': message
         }
     }
-    
+
     if details:
         response['error']['details'] = details
-    
+
+    if http_status is not None:
+        return jsonify(response), http_status
+
     return response
