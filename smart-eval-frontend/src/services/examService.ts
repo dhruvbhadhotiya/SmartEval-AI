@@ -17,6 +17,13 @@ export interface Exam {
     file_url: string
     uploaded_at: string
     file_size: number
+    parsed_answers?: {
+      question_number: number
+      max_marks: number
+      answer_text: string
+      keywords: string[]
+      concepts: string[]
+    }[]
   }
   statistics?: {
     total_sheets?: number

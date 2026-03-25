@@ -107,6 +107,15 @@ class AnswerSheet(Document):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+
+        # Include score from evaluation if graded
+        if self.status == 'graded':
+            from models.evaluation import Evaluation
+            evaluation = Evaluation.objects(answer_sheet_id=self).first()
+            if evaluation:
+                data['score'] = evaluation.percentage
+                data['marks_awarded'] = evaluation.total_marks_awarded
+                data['max_marks'] = evaluation.total_max_marks
         
         # Include OCR results if requested (can be large)
         if include_ocr and self.ocr_results:

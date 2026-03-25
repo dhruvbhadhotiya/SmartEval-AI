@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { fetchExamById, deleteExam, updateExamStatus, uploadQuestionPaper, uploadModelAnswer } from '../../features/exams/examsSlice';
 import examService from '../../services/examService';
-import gradingService, { AnswerSheet } from '../../services/gradingService';
+import gradingService, { AnswerSheet, Evaluation } from '../../services/gradingService';
 import FileUploadZone from '../../components/teacher/FileUploadZone';
 import UpdateExamModal from '../../components/teacher/UpdateExamModal';
 import BulkUploadModal from '../../components/teacher/BulkUploadModal';
+import ModelAnswerModal from '../../components/teacher/ModelAnswerModal';
+import GradingConfigPanel from '../../components/teacher/GradingConfigPanel';
+import EvaluationModal from '../../components/teacher/EvaluationModal';
 
 const ExamDetailsPage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -23,6 +26,15 @@ const ExamDetailsPage: React.FC = () => {
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [ocrMessage, setOcrMessage] = useState<string | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<AnswerSheet | null>(null);
+  const [isGrading, setIsGrading] = useState(false);
+  const [gradingMessage, setGradingMessage] = useState<string | null>(null);
+  const [isModelAnswerOpen, setIsModelAnswerOpen] = useState(false);
+  const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
+  const [selectedEvalSheet, setSelectedEvalSheet] = useState<AnswerSheet | null>(null);
+  const [isExtractingQP, setIsExtractingQP] = useState(false);
+  const [qpExtractedText, setQpExtractedText] = useState<string | null>(null);
+  const [showQpModal, setShowQpModal] = useState(false);
+  const pollingRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (examId) {
@@ -30,6 +42,30 @@ const ExamDetailsPage: React.FC = () => {
       loadAnswerSheets();
     }
   }, [dispatch, examId]);
+
+  // Polling: refresh sheets every 5s while any are in 'processing' state
+  useEffect(() => {
+    const hasProcessing = answerSheets.some(s => s.status === 'processing');
+    if (hasProcessing || isGrading) {
+      if (!pollingRef.current) {
+        pollingRef.current = window.setInterval(async () => {
+          await loadAnswerSheets();
+          if (examId) dispatch(fetchExamById(examId));
+        }, 5000);
+      }
+    } else {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [answerSheets, isGrading]);
 
   const loadAnswerSheets = async () => {
     if (!examId) return;
@@ -66,6 +102,62 @@ const ExamDetailsPage: React.FC = () => {
       await loadAnswerSheets();
     } catch (error: any) {
       alert(error.response?.data?.message || 'Failed to process sheet');
+    }
+  };
+
+  const handleRunGrading = async () => {
+    if (!examId) return;
+    setIsGrading(true);
+    setGradingMessage(null);
+    try {
+      const response = await gradingService.startGrading(examId);
+      const result = response.data;
+      setGradingMessage(`Grading started in background for ${result.sheets_queued} sheet(s). Status will update automatically.`);
+      await loadAnswerSheets();
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || error.response?.data?.message || 'Grading failed';
+      setGradingMessage(`Error: ${msg}`);
+    } finally {
+      setIsGrading(false);
+    }
+  };
+
+  const handleGradeSingleSheet = async (sheetId: string) => {
+    try {
+      await gradingService.gradeSheet(sheetId);
+      await loadAnswerSheets();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to grade sheet');
+    }
+  };
+
+  const handleViewEvaluation = async (sheet: AnswerSheet) => {
+    try {
+      // Fetch evaluation data and sheet with OCR text in parallel
+      const [evalResponse, sheetResponse] = await Promise.all([
+        gradingService.getEvaluation(sheet.id),
+        gradingService.getAnswerSheet(sheet.id),
+      ]);
+      setSelectedEvaluation(evalResponse.data);
+      setSelectedEvalSheet(sheetResponse.data);
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to load evaluation');
+    }
+  };
+
+  const handleExtractQuestionPaper = async () => {
+    if (!examId) return;
+    setIsExtractingQP(true);
+    try {
+      const response = await gradingService.extractQuestionPaperText(examId);
+      const pages = response.data?.pages || [];
+      const fullText = pages.map((p: any) => `--- Page ${p.page_number} ---\n${p.text}`).join('\n\n');
+      setQpExtractedText(fullText || 'No text extracted');
+      setShowQpModal(true);
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to extract question paper text');
+    } finally {
+      setIsExtractingQP(false);
     }
   };
 
@@ -298,7 +390,18 @@ const ExamDetailsPage: React.FC = () => {
 
             {/* Question Paper Section */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Question Paper</h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Question Paper</h2>
+                {currentExam.question_paper && (
+                  <button
+                    onClick={handleExtractQuestionPaper}
+                    disabled={isExtractingQP}
+                    className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {isExtractingQP ? 'Extracting...' : 'Extract Text (OCR)'}
+                  </button>
+                )}
+              </div>
               <FileUploadZone
                 label="Question Paper"
                 accept=".pdf,.doc,.docx"
@@ -307,6 +410,23 @@ const ExamDetailsPage: React.FC = () => {
                 isUploading={uploadingQP}
                 uploadProgress={qpProgress}
               />
+              {/* Show previously extracted text */}
+              {qpExtractedText && (
+                <div className="mt-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-sm font-medium text-gray-700">Extracted Questions</h3>
+                    <button
+                      onClick={() => setShowQpModal(true)}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      View Full Text
+                    </button>
+                  </div>
+                  <pre className="bg-gray-50 p-4 rounded-md text-sm whitespace-pre-wrap border border-gray-200 text-gray-800 max-h-60 overflow-y-auto">
+                    {qpExtractedText}
+                  </pre>
+                </div>
+              )}
             </div>
 
             {/* Model Answer Section */}
@@ -328,6 +448,7 @@ const ExamDetailsPage: React.FC = () => {
                 <h2 className="text-lg font-semibold text-gray-900">Answer Sheets</h2>
                 <div className="flex space-x-2">
                   {answerSheets.length > 0 && (
+                    <>
                     <button
                       onClick={handleRunOCR}
                       disabled={isProcessingOCR}
@@ -345,7 +466,31 @@ const ExamDetailsPage: React.FC = () => {
                         <span>Run OCR</span>
                       )}
                     </button>
+                    <button
+                      onClick={handleRunGrading}
+                      disabled={isGrading || !answerSheets.some(s => s.status === 'ocr_completed' || s.status === 'graded')}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                    >
+                      {isGrading ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          <span>Grading...</span>
+                        </>
+                      ) : (
+                        <span>Run Grading</span>
+                      )}
+                    </button>
+                    </>
                   )}
+                  <button
+                    onClick={() => setIsModelAnswerOpen(true)}
+                    className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700"
+                  >
+                    Model Answers
+                  </button>
                   <button 
                     onClick={() => setIsBulkUploadOpen(true)}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -362,6 +507,13 @@ const ExamDetailsPage: React.FC = () => {
                 </div>
               )}
 
+              {/* Grading Status Message */}
+              {gradingMessage && (
+                <div className={`mb-4 p-3 rounded-md text-sm ${gradingMessage.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-purple-50 text-purple-700'}`}>
+                  {gradingMessage}
+                </div>
+              )}
+
               {answerSheets.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
@@ -370,6 +522,7 @@ const ExamDetailsPage: React.FC = () => {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">File</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uploaded</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                       </tr>
@@ -386,6 +539,13 @@ const ExamDetailsPage: React.FC = () => {
                               {sheet.status.replace('_', ' ')}
                             </span>
                           </td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            {sheet.status === 'graded' && sheet.score !== undefined ? (
+                              <span className="font-semibold">{sheet.score}%</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-500">
                             {sheet.created_at ? new Date(sheet.created_at).toLocaleString() : '-'}
                           </td>
@@ -399,12 +559,36 @@ const ExamDetailsPage: React.FC = () => {
                               </button>
                             )}
                             {sheet.status === 'ocr_completed' && (
-                              <button
-                                onClick={() => handleViewOCR(sheet.id)}
-                                className="text-blue-600 hover:text-blue-800 font-medium"
-                              >
-                                View Text
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => handleViewOCR(sheet.id)}
+                                  className="text-blue-600 hover:text-blue-800 font-medium"
+                                >
+                                  View Text
+                                </button>
+                                <button
+                                  onClick={() => handleGradeSingleSheet(sheet.id)}
+                                  className="text-purple-600 hover:text-purple-800 font-medium"
+                                >
+                                  Grade
+                                </button>
+                              </>
+                            )}
+                            {sheet.status === 'graded' && (
+                              <>
+                                <button
+                                  onClick={() => handleViewOCR(sheet.id)}
+                                  className="text-blue-600 hover:text-blue-800 font-medium"
+                                >
+                                  View Text
+                                </button>
+                                <button
+                                  onClick={() => handleViewEvaluation(sheet)}
+                                  className="text-purple-600 hover:text-purple-800 font-medium"
+                                >
+                                  View Evaluation
+                                </button>
+                              </>
                             )}
                             {sheet.status === 'failed' && (
                               <button
@@ -526,8 +710,29 @@ const ExamDetailsPage: React.FC = () => {
                     </p>
                   </div>
                 )}
+                {currentExam.statistics?.highest_score !== undefined && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500">Highest Score</label>
+                    <p className="mt-1 text-2xl font-bold text-green-600">
+                      {currentExam.statistics.highest_score.toFixed(1)}%
+                    </p>
+                  </div>
+                )}
+                {currentExam.statistics?.lowest_score !== undefined && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500">Lowest Score</label>
+                    <p className="mt-1 text-2xl font-bold text-red-600">
+                      {currentExam.statistics.lowest_score.toFixed(1)}%
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* Grading Configuration */}
+            {examId && (
+              <GradingConfigPanel examId={examId} onUpdated={() => dispatch(fetchExamById(examId))} />
+            )}
 
             {/* Metadata */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -566,7 +771,7 @@ const ExamDetailsPage: React.FC = () => {
       />
 
       {/* OCR Result Viewer Modal */}
-      {selectedSheet && (
+      {selectedSheet && !selectedEvaluation && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
             <div className="flex justify-between items-center p-4 border-b">
@@ -598,6 +803,56 @@ const ExamDetailsPage: React.FC = () => {
               ) : (
                 <p className="text-gray-500 text-center py-8">No OCR results available</p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Model Answer Modal */}
+      {examId && isModelAnswerOpen && (
+        <ModelAnswerModal
+          examId={examId}
+          existingAnswers={currentExam.model_answer?.parsed_answers}
+          maxMarks={currentExam.max_marks || 100}
+          onClose={() => setIsModelAnswerOpen(false)}
+          onSaved={() => {
+            setIsModelAnswerOpen(false);
+            dispatch(fetchExamById(examId));
+          }}
+        />
+      )}
+
+      {/* Evaluation Modal */}
+      {selectedEvaluation && selectedEvalSheet && (
+        <EvaluationModal
+          evaluation={selectedEvaluation}
+          ocrText={selectedEvalSheet.ocr_results?.map(r => r.text).join('\n\n') || ''}
+          onClose={() => {
+            setSelectedEvaluation(null);
+            setSelectedEvalSheet(null);
+          }}
+        />
+      )}
+
+      {/* Question Paper Extracted Text Modal */}
+      {showQpModal && qpExtractedText && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Question Paper - Extracted Text</h3>
+              <button
+                onClick={() => setShowQpModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              <pre className="bg-gray-50 p-4 rounded-md text-sm whitespace-pre-wrap border border-gray-200 text-gray-800">
+                {qpExtractedText}
+              </pre>
             </div>
           </div>
         </div>
