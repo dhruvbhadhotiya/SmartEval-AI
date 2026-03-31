@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import gradingService from '../../services/gradingService'
 
+interface HolisticParams {
+  attendance: {
+    enabled: boolean
+    weight: number
+    threshold: number
+    direction: 'higher' | 'lower'
+  }
+}
+
 interface GradingConfigPanelProps {
   examId: string
   currentStrictness?: string
@@ -19,15 +28,37 @@ export default function GradingConfigPanel({
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
+  // Holistic parameters
+  const [attendanceEnabled, setAttendanceEnabled] = useState(false)
+  const [attendanceWeight, setAttendanceWeight] = useState(5)
+  const [attendanceThreshold, setAttendanceThreshold] = useState(75)
+  const [attendanceDirection, setAttendanceDirection] = useState<'higher' | 'lower'>('higher')
+
   const handleSave = async () => {
     setIsSaving(true)
     setMessage(null)
     try {
-      await gradingService.updateGradingConfig(examId, { strictness, keyword_mode: keywordMode })
+      const holisticParams: HolisticParams = {
+        attendance: {
+          enabled: attendanceEnabled,
+          weight: attendanceWeight,
+          threshold: attendanceThreshold,
+          direction: attendanceDirection,
+        },
+      }
+      await gradingService.updateGradingConfig(examId, {
+        strictness,
+        keyword_mode: keywordMode,
+        holistic_params: holisticParams,
+      })
       setMessage('Configuration saved!')
       onUpdated()
     } catch (err: any) {
-      setMessage(err?.response?.data?.error || 'Failed to save')
+      setMessage(
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.message ||
+        'Failed to save'
+      )
     } finally {
       setIsSaving(false)
     }
@@ -90,6 +121,74 @@ export default function GradingConfigPanel({
             <div className="font-medium text-sm">Exact</div>
             <div className="text-xs mt-1 opacity-75">Only exact keywords</div>
           </button>
+        </div>
+      </div>
+
+      {/* Holistic Parameters */}
+      <div className="border-t border-gray-200 pt-4">
+        <label className="block text-sm font-medium text-gray-700 mb-3">Holistic Parameters</label>
+
+        {/* Attendance toggle */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600">Attendance Factor</span>
+            <button
+              onClick={() => setAttendanceEnabled(!attendanceEnabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                attendanceEnabled ? 'bg-blue-600' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                  attendanceEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {attendanceEnabled && (
+            <div className="ml-2 space-y-3 border-l-2 border-blue-200 pl-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Weight ({attendanceWeight}%)</label>
+                <input
+                  type="range"
+                  min={0}
+                  max={20}
+                  value={attendanceWeight}
+                  onChange={e => setAttendanceWeight(Number(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>0%</span>
+                  <span>20%</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Attendance Threshold (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={attendanceThreshold}
+                  onChange={e => setAttendanceThreshold(Number(e.target.value))}
+                  className="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Direction</label>
+                <select
+                  value={attendanceDirection}
+                  onChange={e => setAttendanceDirection(e.target.value as 'higher' | 'lower')}
+                  className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                >
+                  <option value="higher">Higher marks for borderline</option>
+                  <option value="lower">Lower marks for borderline</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

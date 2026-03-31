@@ -108,8 +108,8 @@ class AnswerSheet(Document):
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
-        # Include score from evaluation if graded
-        if self.status == 'graded':
+        # Include score from evaluation if graded or reviewed
+        if self.status in ('graded', 'reviewed', 'overridden'):
             from models.evaluation import Evaluation
             evaluation = Evaluation.objects(answer_sheet_id=self).first()
             if evaluation:

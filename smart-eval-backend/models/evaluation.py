@@ -16,7 +16,8 @@ from mongoengine import (
     ListField,
     IntField,
     FloatField,
-    DictField
+    DictField,
+    BooleanField
 )
 from models.exam import Exam
 from models.answer_sheet import AnswerSheet
@@ -33,6 +34,13 @@ class QuestionEvaluation(EmbeddedDocument):
     keywords_missing = ListField(StringField())
     concepts_covered = ListField(StringField())
     concepts_missing = ListField(StringField())
+
+    # Override tracking (Sprint 6)
+    override_applied = BooleanField(default=False)
+    original_marks = FloatField()
+    override_reason = StringField()
+    overridden_by = StringField()
+    overridden_at = DateTimeField()
 
 
 class Evaluation(Document):
@@ -112,6 +120,11 @@ class Evaluation(Document):
                     'keywords_missing': qe.keywords_missing,
                     'concepts_covered': qe.concepts_covered,
                     'concepts_missing': qe.concepts_missing,
+                    'override_applied': qe.override_applied,
+                    'original_marks': qe.original_marks,
+                    'override_reason': qe.override_reason,
+                    'overridden_by': qe.overridden_by,
+                    'overridden_at': qe.overridden_at.isoformat() if qe.overridden_at else None,
                 }
                 for qe in self.question_evaluations
             ] if self.question_evaluations else []

@@ -6,6 +6,8 @@ export interface AnswerSheet {
   student_id: string
   status: 'uploaded' | 'processing' | 'ocr_completed' | 'graded' | 'reviewed' | 'challenged' | 'failed'
   score?: number
+  marks_awarded?: number
+  max_marks?: number
   original_file?: {
     url: string
     pages: number
@@ -37,6 +39,11 @@ export interface QuestionEvaluation {
   keywords_missing: string[]
   concepts_covered: string[]
   concepts_missing: string[]
+  override_applied?: boolean
+  original_marks?: number | null
+  override_reason?: string | null
+  overridden_by?: string | null
+  overridden_at?: string | null
 }
 
 export interface Evaluation {
@@ -196,10 +203,39 @@ const gradingService = {
   async updateGradingConfig(examId: string, config: {
     strictness?: string
     keyword_mode?: string
+    holistic_params?: Record<string, any>
   }): Promise<any> {
     const response = await apiClient.put<any>(
       `/api/v1/exams/${examId}/grading-config`,
       config
+    )
+    return Array.isArray(response.data) ? response.data[0] : response.data
+  },
+
+  // --- Teacher Review (Sprint 6) ---
+  async overrideQuestionGrade(sheetId: string, questionNumber: number, data: {
+    marks_awarded: number
+    feedback?: string
+    reason: string
+  }): Promise<any> {
+    const response = await apiClient.put<any>(
+      `/api/v1/grading/sheets/${sheetId}/questions/${questionNumber}`,
+      data
+    )
+    return Array.isArray(response.data) ? response.data[0] : response.data
+  },
+
+  async approveSheet(sheetId: string): Promise<any> {
+    const response = await apiClient.post<any>(
+      `/api/v1/grading/sheets/${sheetId}/approve`
+    )
+    return Array.isArray(response.data) ? response.data[0] : response.data
+  },
+
+  async bulkApprove(examId: string, sheetIds?: string[]): Promise<any> {
+    const response = await apiClient.post<any>(
+      `/api/v1/grading/exams/${examId}/approve-all`,
+      sheetIds && sheetIds.length > 0 ? { sheet_ids: sheetIds } : {}
     )
     return Array.isArray(response.data) ? response.data[0] : response.data
   },

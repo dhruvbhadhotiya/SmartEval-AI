@@ -155,7 +155,7 @@ class GradingService:
         if not sheet:
             raise NotFoundError(f"Answer sheet {answer_sheet_id} not found")
 
-        if sheet.status not in ('ocr_completed', 'graded', 'failed', 'processing'):
+        if sheet.status not in ('ocr_completed', 'graded', 'processing'):
             raise ValidationError(
                 f"Sheet must be OCR-completed before grading. Current status: {sheet.status}"
             )

@@ -2,14 +2,15 @@
 OCR Service
 
 Extracts text from answer sheet images using a Vision model.
-Supports four providers:
+Supports five providers:
   - 'ollama'      : Ollama native API (POST /api/chat with images[] field)
   - 'openai'      : OpenAI-compatible API (POST /v1/chat/completions)
   - 'lmstudio'    : LM Studio native API (POST /api/v1/chat with input[] field)
   - 'openrouter'  : OpenRouter API (OpenAI-compatible with API key)
+  - 'groqcloud'   : Groq Cloud API (OpenAI-compatible with API key)
 
 Configure via environment variables:
-  VISION_PROVIDER, VISION_API_URL, VISION_MODEL, OPENROUTER_API_KEY
+  VISION_PROVIDER, VISION_API_URL, VISION_MODEL, OPENROUTER_API_KEY, GROQ_API_KEY
 """
 
 import base64
@@ -71,7 +72,11 @@ class OCRService:
         results = []
         for idx, (image_b64, mime_type) in enumerate(pages_b64):
             print(f"[OCRService] Processing page {idx + 1}/{len(pages_b64)}")
-            if provider == 'openrouter':
+            if provider == 'groqcloud':
+                api_key = current_app.config.get('GROQ_API_KEY')
+                groq_model = current_app.config.get('GROQ_VISION_MODEL', model)
+                text = OCRService._call_groqcloud(groq_model, image_b64, mime_type, api_key)
+            elif provider == 'openrouter':
                 api_key = current_app.config.get('OPENROUTER_API_KEY')
                 text = OCRService._call_openrouter(api_url, model, image_b64, mime_type, api_key)
             elif provider == 'openai':
@@ -111,6 +116,8 @@ class OCRService:
                     "role": "user",
                     "content": (
                         "Extract all handwritten and printed text from this image accurately. "
+                        "Preserve the structure: if answers are labeled by question numbers "
+                        "(e.g., Q1, Q2, Ans 1, 1., 1)), keep those labels intact. "
                         "Return only the extracted text, no commentary."
                     ),
                     "images": [image_b64]
@@ -149,6 +156,8 @@ class OCRService:
                             "type": "text",
                             "text": (
                                 "Extract all handwritten and printed text from this image accurately. "
+                                "Preserve the structure: if answers are labeled by question numbers "
+                                "(e.g., Q1, Q2, Ans 1, 1., 1)), keep those labels intact. "
                                 "Return only the extracted text, no commentary."
                             )
                         },
@@ -202,6 +211,8 @@ class OCRService:
                             "type": "text",
                             "text": (
                                 "Extract all handwritten and printed text from this image accurately. "
+                                "Preserve the structure: if answers are labeled by question numbers "
+                                "(e.g., Q1, Q2, Ans 1, 1., 1)), keep those labels intact. "
                                 "Return only the extracted text, no commentary."
                             )
                         },
@@ -235,6 +246,61 @@ class OCRService:
     # -----------------------------------------------------------------
 
     @staticmethod
+    def _call_groqcloud(model: str, image_b64: str, mime_type: str, api_key: str) -> str:
+        """Call Groq Cloud API (OpenAI-compatible with API key auth)."""
+        if not api_key:
+            raise ValidationError("GROQ_API_KEY is required for Groq Cloud provider.")
+
+        url = "https://api.groq.com/openai/v1/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Extract all handwritten and printed text from this image accurately. "
+                                "Preserve the structure: if answers are labeled by question numbers "
+                                "(e.g., Q1, Q2, Ans 1, 1., 1)), keep those labels intact. "
+                                "Return only the extracted text, no commentary."
+                            )
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{image_b64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "temperature": 1,
+            "max_completion_tokens": 1024,
+            "top_p": 1,
+            "stream": False
+        }
+
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=600)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except requests.exceptions.ConnectionError:
+            raise ValidationError("Cannot connect to Groq Cloud API. Check your internet connection.")
+        except requests.exceptions.Timeout:
+            raise ValidationError("Groq Cloud request timed out (10 min).")
+        except Exception as e:
+            raise ValidationError(f"OCR extraction failed: {str(e)}")
+
+    @staticmethod
     def _call_lmstudio(api_url: str, model: str, image_b64: str, mime_type: str) -> str:
         """Call LM Studio native API (POST /api/v1/chat)."""
         # Ensure URL ends with /api/v1/chat
@@ -248,6 +314,8 @@ class OCRService:
                     "type": "text",
                     "content": (
                         "Extract all handwritten and printed text from this image accurately. "
+                        "Preserve the structure: if answers are labeled by question numbers "
+                        "(e.g., Q1, Q2, Ans 1, 1., 1)), keep those labels intact. "
                         "Return only the extracted text, no commentary."
                     )
                 },

@@ -35,6 +35,8 @@ const ExamDetailsPage: React.FC = () => {
   const [qpExtractedText, setQpExtractedText] = useState<string | null>(null);
   const [showQpModal, setShowQpModal] = useState(false);
   const pollingRef = useRef<number | null>(null);
+  const pollingCountRef = useRef<number>(0);
+  const MAX_POLLS = 60; // Stop polling after 60 attempts (5 minutes)
 
   useEffect(() => {
     if (examId) {
@@ -43,12 +45,25 @@ const ExamDetailsPage: React.FC = () => {
     }
   }, [dispatch, examId]);
 
-  // Polling: refresh sheets every 5s while any are in 'processing' state
+  // Derive a stable boolean for polling instead of depending on full answerSheets array
+  const hasProcessing = answerSheets.some(s => s.status === 'processing');
+  const shouldPoll = hasProcessing || isGrading;
+
+  // Polling: refresh sheets every 5s while any are in 'processing' state (max 5 min)
   useEffect(() => {
-    const hasProcessing = answerSheets.some(s => s.status === 'processing');
-    if (hasProcessing || isGrading) {
+    if (shouldPoll) {
       if (!pollingRef.current) {
+        pollingCountRef.current = 0;
         pollingRef.current = window.setInterval(async () => {
+          pollingCountRef.current += 1;
+          if (pollingCountRef.current > MAX_POLLS) {
+            // Stop polling after max attempts to prevent infinite loop
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+            return;
+          }
           await loadAnswerSheets();
           if (examId) dispatch(fetchExamById(examId));
         }, 5000);
@@ -57,6 +72,7 @@ const ExamDetailsPage: React.FC = () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
+        pollingCountRef.current = 0;
       }
     }
     return () => {
@@ -65,7 +81,7 @@ const ExamDetailsPage: React.FC = () => {
         pollingRef.current = null;
       }
     };
-  }, [answerSheets, isGrading]);
+  }, [shouldPoll]);
 
   const loadAnswerSheets = async () => {
     if (!examId) return;
@@ -449,6 +465,14 @@ const ExamDetailsPage: React.FC = () => {
                 <div className="flex space-x-2">
                   {answerSheets.length > 0 && (
                     <>
+                    {answerSheets.some(s => s.status === 'graded' || s.status === 'reviewed') && (
+                      <button
+                        onClick={() => navigate(`/dashboard/exams/${examId}/review`)}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 flex items-center space-x-2"
+                      >
+                        <span>Review Grades</span>
+                      </button>
+                    )}
                     <button
                       onClick={handleRunOCR}
                       disabled={isProcessingOCR}
@@ -468,7 +492,7 @@ const ExamDetailsPage: React.FC = () => {
                     </button>
                     <button
                       onClick={handleRunGrading}
-                      disabled={isGrading || !answerSheets.some(s => s.status === 'ocr_completed' || s.status === 'graded')}
+                      disabled={isGrading || !answerSheets.some(s => s.status === 'ocr_completed' || s.status === 'failed')}
                       className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                     >
                       {isGrading ? (
@@ -540,7 +564,7 @@ const ExamDetailsPage: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
-                            {sheet.status === 'graded' && sheet.score !== undefined ? (
+                            {(sheet.status === 'graded' || sheet.status === 'reviewed') && sheet.score !== undefined ? (
                               <span className="font-semibold">{sheet.score}%</span>
                             ) : (
                               <span className="text-gray-400">-</span>
@@ -575,6 +599,22 @@ const ExamDetailsPage: React.FC = () => {
                               </>
                             )}
                             {sheet.status === 'graded' && (
+                              <>
+                                <button
+                                  onClick={() => handleViewOCR(sheet.id)}
+                                  className="text-blue-600 hover:text-blue-800 font-medium"
+                                >
+                                  View Text
+                                </button>
+                                <button
+                                  onClick={() => handleViewEvaluation(sheet)}
+                                  className="text-purple-600 hover:text-purple-800 font-medium"
+                                >
+                                  View Evaluation
+                                </button>
+                              </>
+                            )}
+                            {sheet.status === 'reviewed' && (
                               <>
                                 <button
                                   onClick={() => handleViewOCR(sheet.id)}

@@ -31,8 +31,9 @@ httpx==0.26.0
 Pillow==10.2.0
 PyMuPDF==1.24.0
 
-# LLM integration (Sprint 5)
-# openai==1.10.0
+# LLM integration
+openai==1.10.0
+groq
 
 # Development tools
 pytest==7.4.4

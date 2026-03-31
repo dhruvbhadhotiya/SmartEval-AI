@@ -10,6 +10,7 @@ from marshmallow import ValidationError as MarshmallowValidationError
 from services.exam_service import ExamService
 from services.storage_service import StorageService
 from services.ocr_service import OCRService
+from services.llm_service import LLMService
 from api.v1.exams.schemas import (
     CreateExamSchema,
     UpdateExamSchema,
@@ -471,12 +472,38 @@ def save_parsed_model_answers(exam_id):
             if qn is None or mm is None:
                 return error_response("Each answer must have question_number and max_marks", 400)
 
+            try:
+                question_number = int(qn)
+                max_marks = float(mm)
+            except (TypeError, ValueError):
+                return error_response("question_number must be an integer and max_marks must be a number", 400)
+
+            if question_number < 1:
+                return error_response("question_number must be at least 1", 400)
+
+            if max_marks <= 0:
+                return error_response("max_marks must be greater than 0", 400)
+
+            raw_keywords = ans.get('keywords', [])
+            if raw_keywords is None:
+                raw_keywords = []
+            if not isinstance(raw_keywords, list):
+                return error_response("keywords must be an array of strings", 400)
+            keywords = [str(k) for k in raw_keywords if k is not None]
+
+            raw_concepts = ans.get('concepts', [])
+            if raw_concepts is None:
+                raw_concepts = []
+            if not isinstance(raw_concepts, list):
+                return error_response("concepts must be an array of strings", 400)
+            concepts = [str(c) for c in raw_concepts if c is not None]
+
             parsed_list.append(ParsedAnswer(
-                question_number=int(qn),
-                max_marks=float(mm),
+                question_number=question_number,
+                max_marks=max_marks,
                 answer_text=ans.get('answer_text', ''),
-                keywords=ans.get('keywords', []),
-                concepts=ans.get('concepts', []),
+                keywords=keywords,
+                concepts=concepts,
             ))
 
         if not exam.model_answer:
@@ -563,7 +590,7 @@ def extract_model_answer_text(exam_id):
     Run OCR on the uploaded model answer PDF to extract text.
 
     POST /api/v1/exams/:exam_id/model-answer/extract
-    Returns: { "pages": [ { page_number, text, confidence } ] }
+    Returns: { "pages": [ { page_number, text, confidence } ], "parsed_questions": [...] }
     """
     try:
         current_user_id = get_jwt_identity()
@@ -588,10 +615,26 @@ def extract_model_answer_text(exam_id):
             if hasattr(page.get('processed_at', ''), 'isoformat'):
                 page['processed_at'] = page['processed_at'].isoformat()
 
+        # Combine all page text and use LLM to parse into structured questions
+        # with keywords and concepts
+        full_text = '\n\n'.join(p['text'] for p in page_results if p.get('text'))
+        parsed_questions = []
+        if full_text.strip():
+            try:
+                parsed_questions = LLMService.parse_model_answer_text(
+                    full_text, max_marks=exam.max_marks or 100.0
+                )
+            except Exception as parse_err:
+                print(f"[ExtractModelAnswer] LLM parsing failed: {parse_err}")
+                # Fallback: return raw text without parsed questions
+
         from flask import jsonify as jfy
         return jfy(success_response(
-            data={'pages': page_results},
-            message=f"Extracted text from {len(page_results)} page(s)"
+            data={
+                'pages': page_results,
+                'parsed_questions': parsed_questions,
+            },
+            message=f"Extracted text from {len(page_results)} page(s), parsed {len(parsed_questions)} question(s)"
         ))
 
     except ValidationError as e:

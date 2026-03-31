@@ -2,14 +2,15 @@
 LLM Service
 
 Grades student answers against model answers using an LLM.
-Supports the same 4 providers as OCR service:
+Supports 5 providers:
   - 'ollama'      : Ollama native API
   - 'openai'      : OpenAI-compatible API (LM Studio, vLLM, etc.)
   - 'lmstudio'    : LM Studio native API
   - 'openrouter'  : OpenRouter API (cloud, free tier available)
+  - 'groqcloud'   : Groq Cloud API (fast inference)
 
 Configure via environment variables:
-  LLM_PROVIDER, LLM_API_URL, LLM_MODEL, OPENROUTER_API_KEY
+  LLM_PROVIDER, LLM_API_URL, LLM_MODEL, OPENROUTER_API_KEY, GROQ_API_KEY
 """
 
 import json
@@ -53,7 +54,11 @@ class LLMService:
 
         print(f"[LLMService] Grading Q{question_number} via {provider} ({model})")
 
-        if provider == 'openrouter':
+        if provider == 'groqcloud':
+            api_key = current_app.config.get('GROQ_API_KEY')
+            groq_model = current_app.config.get('GROQ_LLM_MODEL', model)
+            raw = LLMService._call_groqcloud(groq_model, prompt, api_key)
+        elif provider == 'openrouter':
             api_key = current_app.config.get('OPENROUTER_API_KEY')
             raw = LLMService._call_openrouter(api_url, model, prompt, api_key)
         elif provider == 'openai':
@@ -93,6 +98,107 @@ class LLMService:
             results.append(result)
         return results
 
+    @staticmethod
+    def parse_model_answer_text(ocr_text: str, max_marks: float = 100.0) -> list:
+        """
+        Use the LLM to parse raw OCR text from a model answer PDF into
+        structured per-question answers with keywords and concepts.
+
+        Returns list of dicts:
+            [{question_number, max_marks, answer_text, keywords[], concepts[]}, ...]
+        """
+        provider = current_app.config.get('LLM_PROVIDER', 'ollama')
+        api_url = current_app.config.get('LLM_API_URL')
+        model = current_app.config.get('LLM_MODEL')
+
+        prompt = f"""You are an expert educational content parser. Analyze the following text extracted from a model answer PDF.
+
+Your task:
+1. Identify and separate each question's answer (look for patterns like "Q1", "Question 1", "Ans 1", "1.", "1)", etc.)
+2. For EACH question, extract:
+   - The answer text
+   - Important keywords (key terms, technical terms, formulas, definitions)
+   - Core concepts (higher-level ideas/topics the answer covers)
+3. If the text does not have clear question separators, try to identify distinct answer sections based on content changes.
+4. Distribute the total marks ({max_marks}) proportionally across questions based on answer length/complexity.
+
+TEXT FROM MODEL ANSWER PDF:
+{ocr_text}
+
+RESPOND IN EXACTLY THIS JSON FORMAT (no extra text before or after):
+{{
+  "questions": [
+    {{
+      "question_number": 1,
+      "max_marks": <proportional marks>,
+      "answer_text": "<the model answer text for this question>",
+      "keywords": ["keyword1", "keyword2", ...],
+      "concepts": ["concept1", "concept2", ...]
+    }}
+  ]
+}}"""
+
+        print(f"[LLMService] Parsing model answer text via {provider} ({model})")
+
+        if provider == 'groqcloud':
+            api_key = current_app.config.get('GROQ_API_KEY')
+            groq_model = current_app.config.get('GROQ_LLM_MODEL', model)
+            raw = LLMService._call_groqcloud(groq_model, prompt, api_key)
+        elif provider == 'openrouter':
+            api_key = current_app.config.get('OPENROUTER_API_KEY')
+            raw = LLMService._call_openrouter(api_url, model, prompt, api_key)
+        elif provider == 'openai':
+            raw = LLMService._call_openai(api_url, model, prompt)
+        elif provider == 'lmstudio':
+            raw = LLMService._call_lmstudio(api_url, model, prompt)
+        else:
+            raw = LLMService._call_ollama(api_url, model, prompt)
+
+        return LLMService._parse_model_answer_response(raw, ocr_text, max_marks)
+
+    @staticmethod
+    def _parse_model_answer_response(raw_text: str, original_text: str, max_marks: float) -> list:
+        """Parse the LLM response for model answer parsing into structured data."""
+        try:
+            text = raw_text.strip()
+            if '```json' in text:
+                text = text.split('```json')[1].split('```')[0].strip()
+            elif '```' in text:
+                text = text.split('```')[1].split('```')[0].strip()
+
+            start = text.index('{')
+            end = text.rindex('}') + 1
+            json_str = text[start:end]
+
+            result = json.loads(json_str)
+            questions = result.get('questions', [])
+
+            if not questions:
+                raise ValueError("No questions found in LLM response")
+
+            parsed = []
+            for q in questions:
+                parsed.append({
+                    'question_number': int(q.get('question_number', len(parsed) + 1)),
+                    'max_marks': float(q.get('max_marks', max_marks / max(len(questions), 1))),
+                    'answer_text': str(q.get('answer_text', '')),
+                    'keywords': q.get('keywords', []),
+                    'concepts': q.get('concepts', []),
+                })
+            return parsed
+
+        except (json.JSONDecodeError, ValueError, IndexError) as e:
+            print(f"[LLMService] Failed to parse model answer response: {e}")
+            print(f"[LLMService] Raw response: {raw_text[:500]}")
+            # Fallback: return the entire text as a single question
+            return [{
+                'question_number': 1,
+                'max_marks': max_marks,
+                'answer_text': original_text,
+                'keywords': [],
+                'concepts': [],
+            }]
+
     # -----------------------------------------------------------------
     # Prompt engineering
     # -----------------------------------------------------------------
@@ -122,14 +228,17 @@ MODEL ANSWER:
 KEYWORDS TO CHECK: {', '.join(keywords) if keywords else 'None specified'}
 CONCEPTS TO CHECK: {', '.join(concepts) if concepts else 'None specified'}
 
-STUDENT'S ANSWER (extracted via OCR from handwritten sheet):
+STUDENT'S FULL ANSWER SHEET (extracted via OCR from handwritten sheet):
 {student_text}
 
 INSTRUCTIONS:
-1. Compare the student answer with the model answer.
-2. Check for presence of the listed keywords and concepts.
-3. Award marks out of {max_marks} based on correctness, completeness, and the strictness level.
-4. Provide brief, constructive feedback (max 100 words).
+1. From the student's full answer sheet above, identify and extract ONLY the answer for Question {question_number}.
+   Look for labels like "Q{question_number}", "Ans {question_number}", "{question_number}.", "{question_number})" etc.
+   If no clear label exists, use context to determine which section answers Question {question_number}.
+2. Compare the identified student answer with the model answer.
+3. Check for presence of the listed keywords and concepts.
+4. Award marks out of {max_marks} based on correctness, completeness, and the strictness level.
+5. Provide brief, constructive feedback (max 100 words).
 
 RESPOND IN EXACTLY THIS JSON FORMAT (no extra text before or after):
 {{
@@ -250,6 +359,46 @@ RESPOND IN EXACTLY THIS JSON FORMAT (no extra text before or after):
             raise ValidationError("Cannot connect to OpenRouter API. Check your internet.")
         except requests.exceptions.Timeout:
             raise ValidationError("OpenRouter request timed out (5 min).")
+        except Exception as e:
+            raise ValidationError(f"LLM grading failed: {str(e)}")
+
+    @staticmethod
+    def _call_groqcloud(model: str, prompt: str, api_key: str) -> str:
+        """Call Groq Cloud API for LLM grading."""
+        if not api_key:
+            raise ValidationError("GROQ_API_KEY is required for Groq Cloud provider.")
+
+        url = "https://api.groq.com/openai/v1/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_completion_tokens": 8192,
+            "temperature": 1,
+            "top_p": 1,
+            "stream": False
+        }
+
+        # Add reasoning_effort for models that support it
+        if 'gpt-oss' in model or 'reasoning' in model:
+            payload["reasoning_effort"] = "medium"
+
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=300)
+            print(f"[LLMService] Groq Cloud status={resp.status_code}")
+            if resp.status_code != 200:
+                print(f"[LLMService] Groq Cloud error body: {resp.text[:500]}")
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except requests.exceptions.ConnectionError:
+            raise ValidationError("Cannot connect to Groq Cloud API. Check your internet.")
+        except requests.exceptions.Timeout:
+            raise ValidationError("Groq Cloud request timed out (5 min).")
         except Exception as e:
             raise ValidationError(f"LLM grading failed: {str(e)}")
 

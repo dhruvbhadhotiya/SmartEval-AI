@@ -67,6 +67,35 @@ export default function ModelAnswerModal({
       question_number: i + 1,
     }))
     setAnswers(updated)
+
+    // Keep raw keyword/concept inputs aligned with answers after removal
+    setKeywordsRaw(prev => {
+      const next: Record<number, string> = {}
+      Object.keys(prev).forEach(key => {
+        const i = parseInt(key, 10)
+        if (Number.isNaN(i)) return
+        if (i < idx) {
+          next[i] = prev[i]
+        } else if (i > idx) {
+          next[i - 1] = prev[i]
+        }
+      })
+      return next
+    })
+
+    setConceptsRaw(prev => {
+      const next: Record<number, string> = {}
+      Object.keys(prev).forEach(key => {
+        const i = parseInt(key, 10)
+        if (Number.isNaN(i)) return
+        if (i < idx) {
+          next[i] = prev[i]
+        } else if (i > idx) {
+          next[i - 1] = prev[i]
+        }
+      })
+      return next
+    })
   }
 
   const updateAnswer = (idx: number, field: keyof ParsedAnswer, value: any) => {
@@ -104,7 +133,12 @@ export default function ModelAnswerModal({
       await gradingService.saveParsedModelAnswers(examId, finalAnswers)
       onSaved()
     } catch (err: any) {
-      setError(err?.response?.data?.error || err.message || 'Failed to save')
+      setError(
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.message ||
+        err.message ||
+        'Failed to save'
+      )
     } finally {
       setIsSaving(false)
     }
@@ -116,19 +150,45 @@ export default function ModelAnswerModal({
     try {
       const response = await gradingService.extractModelAnswerText(examId)
       const pages = response.data?.pages || []
+      const parsedQuestions = response.data?.parsed_questions || []
+
       if (pages.length === 0) {
         setError('No text could be extracted from the model answer PDF')
         return
       }
-      // Combine all page text and pre-fill as a single question answer
-      const fullText = pages.map((p: any) => p.text).join('\n\n')
-      setAnswers([{
-        question_number: 1,
-        max_marks: maxMarks,
-        answer_text: fullText,
-        keywords: [],
-        concepts: [],
-      }])
+
+      // If LLM successfully parsed into structured questions, use those
+      if (parsedQuestions.length > 0) {
+        const newAnswers = parsedQuestions.map((q: any, idx: number) => ({
+          question_number: q.question_number || idx + 1,
+          max_marks: q.max_marks || 0,
+          answer_text: q.answer_text || '',
+          keywords: q.keywords || [],
+          concepts: q.concepts || [],
+        }))
+        setAnswers(newAnswers)
+        // Pre-populate raw keyword/concept strings from parsed data
+        const newKeywordsRaw: Record<number, string> = {}
+        const newConceptsRaw: Record<number, string> = {}
+        newAnswers.forEach((a: ParsedAnswer, i: number) => {
+          newKeywordsRaw[i] = (a.keywords || []).join(', ')
+          newConceptsRaw[i] = (a.concepts || []).join(', ')
+        })
+        setKeywordsRaw(newKeywordsRaw)
+        setConceptsRaw(newConceptsRaw)
+      } else {
+        // Fallback: combine all page text as a single question
+        const fullText = pages.map((p: any) => p.text).join('\n\n')
+        setAnswers([{
+          question_number: 1,
+          max_marks: maxMarks,
+          answer_text: fullText,
+          keywords: [],
+          concepts: [],
+        }])
+        setKeywordsRaw({ 0: '' })
+        setConceptsRaw({ 0: '' })
+      }
     } catch (err: any) {
       setError(err?.response?.data?.error?.message || err?.response?.data?.message || err.message || 'Failed to extract text from PDF')
     } finally {

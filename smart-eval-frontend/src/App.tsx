@@ -5,6 +5,7 @@ import { getCurrentUser } from './features/auth/authSlice';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/teacher/DashboardPage';
 import ExamDetailsPage from './pages/teacher/ExamDetailsPage';
+import GradingReviewPage from './pages/teacher/GradingReviewPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -57,6 +58,15 @@ function App() {
         element={
           <ProtectedRoute requiredRole="teacher">
             <ExamDetailsPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/dashboard/exams/:examId/review"
+        element={
+          <ProtectedRoute requiredRole="teacher">
+            <GradingReviewPage />
           </ProtectedRoute>
         }
       />

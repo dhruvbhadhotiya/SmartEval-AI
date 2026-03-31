@@ -4,8 +4,9 @@ Grading / OCR API Routes
 Endpoints for triggering OCR processing, LLM grading, and retrieving results.
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from datetime import datetime
 import threading
 
 from services.exam_service import ExamService
@@ -348,3 +349,202 @@ def list_evaluations(exam_id):
         return error_response(str(e), 403)
     except Exception as e:
         return error_response(f"Failed to list evaluations: {str(e)}", 500)
+
+
+# ------------------------------------------------------------------
+# Teacher Review — Grade Override, Approve, Bulk Approve (Sprint 6)
+# ------------------------------------------------------------------
+
+@grading_bp.route('/sheets/<sheet_id>/questions/<int:q_num>', methods=['PUT'])
+@jwt_required()
+@role_required(['teacher'])
+def override_question_grade(sheet_id, q_num):
+    """
+    Override a single question's grade on a graded answer sheet.
+
+    PUT /api/v1/grading/sheets/:sheetId/questions/:qNum
+    Body: { "marks_awarded": 18, "feedback": "...", "reason": "..." }
+    """
+    try:
+        current_user_id = get_jwt_identity()
+
+        sheet = AnswerSheet.objects(id=sheet_id).first()
+        if not sheet:
+            return error_response("Answer sheet not found", 404)
+
+        # Verify ownership
+        ExamService.get_exam_by_id(str(sheet.exam_id.id), teacher_id=current_user_id)
+
+        evaluation = Evaluation.objects(answer_sheet_id=sheet).first()
+        if not evaluation:
+            return error_response("No evaluation found for this answer sheet", 404)
+
+        body = request.get_json() or {}
+        new_marks = body.get('marks_awarded')
+        reason = body.get('reason', '').strip()
+
+        if new_marks is None:
+            return error_response("marks_awarded is required", 400)
+
+        if not reason:
+            return error_response("reason is required when overriding a grade", 400)
+
+        # Find the question evaluation
+        target_qe = None
+        for qe in evaluation.question_evaluations:
+            if qe.question_number == q_num:
+                target_qe = qe
+                break
+
+        if not target_qe:
+            return error_response(f"Question {q_num} not found in evaluation", 404)
+
+        if float(new_marks) < 0 or float(new_marks) > target_qe.max_marks:
+            return error_response(
+                f"marks_awarded must be between 0 and {target_qe.max_marks}", 400
+            )
+
+        # Store original marks (only first override)
+        if not target_qe.override_applied:
+            target_qe.original_marks = target_qe.marks_awarded
+
+        target_qe.marks_awarded = float(new_marks)
+        if body.get('feedback'):
+            target_qe.feedback = body['feedback']
+        target_qe.override_applied = True
+        target_qe.override_reason = reason
+        target_qe.overridden_by = current_user_id
+        target_qe.overridden_at = datetime.utcnow()
+
+        # Recalculate totals
+        total = sum(qe.marks_awarded for qe in evaluation.question_evaluations)
+        evaluation.total_marks_awarded = total
+        if evaluation.total_max_marks > 0:
+            evaluation.percentage = round(total / evaluation.total_max_marks * 100, 2)
+        evaluation.status = 'overridden'
+        evaluation.save()
+
+        return success_response(
+            data=evaluation.to_dict(),
+            message=f"Question {q_num} grade overridden successfully"
+        )
+
+    except NotFoundError as e:
+        return error_response(str(e), 404)
+    except ForbiddenError as e:
+        return error_response(str(e), 403)
+    except Exception as e:
+        return error_response(f"Override failed: {str(e)}", 500)
+
+
+@grading_bp.route('/sheets/<sheet_id>/approve', methods=['POST'])
+@jwt_required()
+@role_required(['teacher'])
+def approve_sheet(sheet_id):
+    """
+    Approve a single graded/overridden answer sheet (status → reviewed).
+
+    POST /api/v1/grading/sheets/:sheetId/approve
+    """
+    try:
+        current_user_id = get_jwt_identity()
+
+        sheet = AnswerSheet.objects(id=sheet_id).first()
+        if not sheet:
+            return error_response("Answer sheet not found", 404)
+
+        exam = ExamService.get_exam_by_id(str(sheet.exam_id.id), teacher_id=current_user_id)
+
+        if sheet.status not in ('graded', 'reviewed'):
+            return error_response(
+                f"Sheet must be graded or reviewed to approve (current: {sheet.status})", 400
+            )
+
+        if sheet.status == 'reviewed':
+            return success_response(message="Sheet already reviewed")
+
+        sheet.status = 'reviewed'
+        sheet.add_processing_log('review', 'approved', {'approved_by': current_user_id})
+
+        # Update exam statistics
+        from models.exam import ExamStatistics
+        if not exam.statistics:
+            exam.statistics = ExamStatistics()
+        exam.statistics.reviewed = (exam.statistics.reviewed or 0) + 1
+        exam.save()
+
+        return success_response(
+            data=sheet.to_dict(),
+            message="Sheet approved successfully"
+        )
+
+    except NotFoundError as e:
+        return error_response(str(e), 404)
+    except ForbiddenError as e:
+        return error_response(str(e), 403)
+    except Exception as e:
+        return error_response(f"Approval failed: {str(e)}", 500)
+
+
+@grading_bp.route('/exams/<exam_id>/approve-all', methods=['POST'])
+@jwt_required()
+@role_required(['teacher'])
+def bulk_approve(exam_id):
+    """
+    Bulk approve graded answer sheets for an exam.
+
+    POST /api/v1/grading/exams/:examId/approve-all
+    Body: { "sheet_ids": ["id1", "id2"] }  (optional — if empty, approves ALL graded)
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        exam = ExamService.get_exam_by_id(exam_id, teacher_id=current_user_id)
+
+        body = request.get_json() or {}
+        sheet_ids = body.get('sheet_ids', [])
+
+        if sheet_ids:
+            sheets = AnswerSheet.objects(id__in=sheet_ids, exam_id=exam)
+        else:
+            sheets = AnswerSheet.objects(exam_id=exam, status='graded')
+
+        approved_count = 0
+        already_reviewed = 0
+        failed = 0
+
+        for s in sheets:
+            if s.status == 'reviewed':
+                already_reviewed += 1
+                continue
+            if s.status not in ('graded',):
+                failed += 1
+                continue
+            s.status = 'reviewed'
+            s.add_processing_log('review', 'approved', {'approved_by': current_user_id})
+            approved_count += 1
+
+        # Update exam statistics
+        reviewed_total = AnswerSheet.objects(
+            exam_id=exam, status='reviewed'
+        ).count()
+        from models.exam import ExamStatistics
+        if not exam.statistics:
+            exam.statistics = ExamStatistics()
+        exam.statistics.reviewed = reviewed_total
+        exam.save()
+
+        return success_response(
+            data={
+                'approved_count': approved_count,
+                'already_reviewed': already_reviewed,
+                'failed': failed
+            },
+            message=f"Bulk approve complete: {approved_count} approved"
+        )
+
+    except NotFoundError as e:
+        return error_response(str(e), 404)
+    except ForbiddenError as e:
+        return error_response(str(e), 403)
+    except Exception as e:
+        return error_response(f"Bulk approve failed: {str(e)}", 500)
