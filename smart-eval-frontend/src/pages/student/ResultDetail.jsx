@@ -1,1 +1,0 @@
-// Student Result Detail page

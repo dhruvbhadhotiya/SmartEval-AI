@@ -49,6 +49,12 @@ const DashboardPage: React.FC = () => {
             <div className="flex items-center">
               <h1 className="text-2xl font-bold text-blue-600">SmartEval</h1>
               <span className="ml-4 text-sm text-gray-600">Teacher Dashboard</span>
+              <button
+                onClick={() => navigate('/dashboard/challenges')}
+                className="ml-6 px-3 py-1.5 text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-md hover:bg-orange-100 transition-colors"
+              >
+                Challenge Queue
+              </button>
             </div>
             <div className="flex items-center space-x-4">
               <div className="text-sm">

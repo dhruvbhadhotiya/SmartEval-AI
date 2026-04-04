@@ -38,12 +38,28 @@ const ExamDetailsPage: React.FC = () => {
   const pollingCountRef = useRef<number>(0);
   const MAX_POLLS = 60; // Stop polling after 60 attempts (5 minutes)
 
+  // Student assignment state
+  const [students, setStudents] = useState<{ id: string; email: string; name: string; roll_number: string }[]>([])
+  const [assignEmail, setAssignEmail] = useState('')
+  const [isAssigning, setIsAssigning] = useState(false)
+  const [assignMsg, setAssignMsg] = useState<string | null>(null)
+
   useEffect(() => {
     if (examId) {
       dispatch(fetchExamById(examId));
       loadAnswerSheets();
+      loadStudents();
     }
   }, [dispatch, examId]);
+
+  const loadStudents = async () => {
+    try {
+      const data = await examService.listStudents()
+      setStudents(data)
+    } catch {
+      // Students may not exist yet
+    }
+  }
 
   // Derive a stable boolean for polling instead of depending on full answerSheets array
   const hasProcessing = answerSheets.some(s => s.status === 'processing');
@@ -243,6 +259,22 @@ const ExamDetailsPage: React.FC = () => {
       await dispatch(updateExamStatus({ examId, status: newStatus }));
     }
   };
+
+  const handleBulkAssign = async () => {
+    if (!examId || !assignEmail) return
+    setIsAssigning(true)
+    setAssignMsg(null)
+    try {
+      const result = await examService.bulkAssignSheets(examId, assignEmail)
+      setAssignMsg(`Assigned ${result.data?.assigned_count || 0} sheet(s) to ${assignEmail}`)
+      setAssignEmail('')
+      await loadAnswerSheets()
+    } catch (error: any) {
+      setAssignMsg(`Error: ${error.response?.data?.error?.message || 'Failed to assign sheets'}`)
+    } finally {
+      setIsAssigning(false)
+    }
+  }
 
   const handleBulkUpload = async (files: File[]) => {
     if (!examId) return;
@@ -538,6 +570,39 @@ const ExamDetailsPage: React.FC = () => {
                 </div>
               )}
 
+              {/* Assign Sheets to Student */}
+              {answerSheets.length > 0 && (
+                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="text-sm font-medium text-blue-900 mb-2">Assign Sheets to Student</h4>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={assignEmail}
+                      onChange={e => setAssignEmail(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    >
+                      <option value="">Select a student...</option>
+                      {students.map(s => (
+                        <option key={s.id} value={s.email}>
+                          {s.name || s.email} {s.roll_number ? `(${s.roll_number})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleBulkAssign}
+                      disabled={!assignEmail || isAssigning}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm whitespace-nowrap"
+                    >
+                      {isAssigning ? 'Assigning...' : 'Assign All Sheets'}
+                    </button>
+                  </div>
+                  {assignMsg && (
+                    <p className={`mt-2 text-xs ${assignMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>
+                      {assignMsg}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {answerSheets.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
@@ -701,6 +766,14 @@ const ExamDetailsPage: React.FC = () => {
                     className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
                   >
                     Publish Results
+                  </button>
+                )}
+                {currentExam.status === 'published' && (
+                  <button
+                    onClick={() => handleStatusChange('reviewing')}
+                    className="w-full px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"
+                  >
+                    Unpublish Results
                   </button>
                 )}
                 {currentExam.status === 'draft' && (

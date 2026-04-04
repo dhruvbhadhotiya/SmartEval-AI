@@ -6,6 +6,9 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/teacher/DashboardPage';
 import ExamDetailsPage from './pages/teacher/ExamDetailsPage';
 import GradingReviewPage from './pages/teacher/GradingReviewPage';
+import ChallengeQueuePage from './pages/teacher/ChallengeQueuePage';
+import StudentDashboardPage from './pages/student/StudentDashboardPage';
+import ResultDetailPage from './pages/student/ResultDetailPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -67,6 +70,34 @@ function App() {
         element={
           <ProtectedRoute requiredRole="teacher">
             <GradingReviewPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/dashboard/challenges"
+        element={
+          <ProtectedRoute requiredRole="teacher">
+            <ChallengeQueuePage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Protected student routes */}
+      <Route
+        path="/student/dashboard"
+        element={
+          <ProtectedRoute requiredRole="student">
+            <StudentDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/student/results/:examId"
+        element={
+          <ProtectedRoute requiredRole="student">
+            <ResultDetailPage />
           </ProtectedRoute>
         }
       />

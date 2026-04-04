@@ -240,7 +240,7 @@ class ExamService:
             'configuring': ['draft', 'grading'],
             'grading': ['reviewing'],
             'reviewing': ['grading', 'published'],
-            'published': []  # Cannot change status once published
+            'published': ['reviewing']  # Allow unpublishing
         }
         
         if new_status not in valid_transitions.get(exam.status, []):
@@ -253,6 +253,8 @@ class ExamService:
         # Set published_at timestamp if publishing
         if new_status == 'published':
             exam.published_at = datetime.utcnow()
+        elif exam.status == 'published' and new_status != 'published':
+            exam.published_at = None
         
         exam.save()
         return exam
