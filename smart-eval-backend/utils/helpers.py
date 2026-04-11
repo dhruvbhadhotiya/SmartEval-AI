@@ -3,7 +3,8 @@ Utility helper functions
 """
 import re
 from datetime import datetime
-from flask import jsonify
+
+
 
 
 def validate_email(email):
@@ -96,16 +97,15 @@ def error_response(message, code=None, details=None):
     """
     Create standardized error response.
 
-    Supports two calling styles:
-      1) error_response("msg", 404)       — returns (jsonify, http_status)
-      2) error_response("msg", code='X')  — returns plain dict (caller wraps in jsonify)
+    When ``code`` is an int (HTTP status), returns ``(dict, status)`` so
+    Flask can serialise it directly.  When ``code`` is a string, returns
+    a plain dict (caller adds jsonify + status).
 
     Args:
         message: Error message
-        code: Numeric HTTP status *or* string error code
+        code: Numeric HTTP status **or** string error code
         details: Additional error details
     """
-    # Determine if code is a numeric HTTP status or a string error code
     if isinstance(code, int):
         http_status = code
         error_code = code
@@ -125,6 +125,9 @@ def error_response(message, code=None, details=None):
         response['error']['details'] = details
 
     if http_status is not None:
-        return jsonify(response), http_status
+        # Return (dict, status) — Flask 2.2+ auto-serialises dicts.
+        # Unlike the old version this is NOT (jsonify(dict), status),
+        # so wrapping with jsonify() won't double-wrap.
+        return response, http_status
 
     return response

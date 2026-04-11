@@ -1,11 +1,60 @@
-# Development Docker Compose configuration
 version: '3.8'
 
 services:
-  # Development service definitions to be added
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: mongosh --eval "db.adminCommand('ping')" --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  backend:
+    build: ./smart-eval-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./smart-eval-backend:/app
+      - backend_uploads:/app/uploads
+    env_file:
+      - ./smart-eval-backend/.env
+    environment:
+      - FLASK_ENV=development
+      - MONGODB_URI=mongodb://mongodb:27017/smarteval
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python run.py
+
+  frontend:
+    build:
+      context: ./smart-eval-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./smart-eval-frontend/src:/app/src
+    environment:
+      - VITE_API_BASE_URL=http://localhost:5000
+    command: npm run dev -- --host 0.0.0.0
 
 volumes:
-  # Volume definitions to be added
-
-networks:
-  # Network definitions to be added
+  mongo_data:
+  backend_uploads:

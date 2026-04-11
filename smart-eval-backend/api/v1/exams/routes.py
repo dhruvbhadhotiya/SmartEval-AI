@@ -102,9 +102,8 @@ def create_exam():
         
         return success_response(
             data=exam.to_dict(),
-            message="Exam created successfully",
-            status_code=201
-        )
+            message="Exam created successfully"
+        ), 201
         
     except MarshmallowValidationError as e:
         return error_response(str(e), 400)
