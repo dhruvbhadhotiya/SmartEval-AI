@@ -650,6 +650,80 @@ def extract_model_answer_text(exam_id):
         return error_response(f"Failed to extract model answer text: {str(e)}", 500)
 
 
+@exam_bp.route('/<exam_id>/publish-preview', methods=['GET'])
+@jwt_required()
+@role_required(['teacher'])
+def publish_preview(exam_id):
+    """
+    Preview statistics before publishing results.
+
+    GET /api/v1/exams/:exam_id/publish-preview
+    Returns summary: total sheets, graded count, score distribution, etc.
+    """
+    try:
+        from models.evaluation import Evaluation
+
+        current_user_id = get_jwt_identity()
+        exam = ExamService.get_exam_by_id(exam_id, teacher_id=current_user_id)
+
+        sheets = AnswerSheetDoc.objects(exam_id=exam.id)
+        total_sheets = sheets.count()
+
+        evaluations = Evaluation.objects(exam_id=exam.id, status__in=['completed', 'overridden'])
+        graded_count = evaluations.count()
+
+        # Score distribution
+        scores = []
+        assigned_students = 0
+        for ev in evaluations:
+            scores.append(ev.percentage)
+
+        for s in sheets:
+            if s.student_id and str(s.student_id.id) != str(exam.teacher_id.id):
+                assigned_students += 1
+
+        avg_score = sum(scores) / len(scores) if scores else 0
+        max_score = max(scores) if scores else 0
+        min_score = min(scores) if scores else 0
+
+        # Distribution buckets
+        dist = {'90_100': 0, '75_89': 0, '50_74': 0, '33_49': 0, 'below_33': 0}
+        for pct in scores:
+            if pct >= 90:
+                dist['90_100'] += 1
+            elif pct >= 75:
+                dist['75_89'] += 1
+            elif pct >= 50:
+                dist['50_74'] += 1
+            elif pct >= 33:
+                dist['33_49'] += 1
+            else:
+                dist['below_33'] += 1
+
+        return success_response(data={
+            'exam_id': str(exam.id),
+            'exam_title': exam.title,
+            'exam_subject': exam.subject,
+            'total_sheets': total_sheets,
+            'graded_count': graded_count,
+            'ungraded_count': total_sheets - graded_count,
+            'assigned_students': assigned_students,
+            'unassigned_sheets': total_sheets - assigned_students,
+            'average_score': round(avg_score, 1),
+            'highest_score': round(max_score, 1),
+            'lowest_score': round(min_score, 1),
+            'distribution': dist,
+            'ready_to_publish': graded_count > 0 and assigned_students > 0,
+        })
+
+    except NotFoundError as e:
+        return error_response(str(e), 404)
+    except ForbiddenError as e:
+        return error_response(str(e), 403)
+    except Exception as e:
+        return error_response(f"Failed to generate preview: {str(e)}", 500)
+
+
 @exam_bp.route('/<exam_id>/publish', methods=['POST'])
 @jwt_required()
 @role_required(['teacher'])
@@ -673,6 +747,23 @@ def publish_results(exam_id):
         exam.status = 'published'
         exam.published_at = datetime.utcnow()
         exam.save()
+
+        # Send email notifications to students with assigned sheets
+        try:
+            from services.notification_service import notify_results_published
+            sheets = AnswerSheetDoc.objects(exam_id=exam.id)
+            student_ids = set()
+            for s in sheets:
+                if s.student_id and str(s.student_id.id) != str(exam.teacher_id.id):
+                    student_ids.add(s.student_id.id)
+            if student_ids:
+                students = User.objects(id__in=list(student_ids)).only('email')
+                emails = [st.email for st in students if st.email]
+                teacher = User.objects(id=current_user_id).first()
+                teacher_name = teacher.profile.get('name', teacher.email) if teacher else 'Teacher'
+                notify_results_published(emails, exam.title, exam.subject, teacher_name)
+        except Exception as notify_err:
+            print(f"[Publish] Notification failed (non-fatal): {notify_err}")
 
         return success_response(
             data={'exam': exam.to_dict()},

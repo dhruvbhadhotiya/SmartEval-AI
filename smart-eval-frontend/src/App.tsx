@@ -1,15 +1,30 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAppDispatch, useAppSelector } from './app/hooks';
 import { getCurrentUser } from './features/auth/authSlice';
+import ErrorBoundary from './components/ErrorBoundary';
+import OfflineBanner from './components/OfflineBanner';
+import { ToastProvider } from './components/ToastProvider';
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/teacher/DashboardPage';
-import ExamDetailsPage from './pages/teacher/ExamDetailsPage';
-import GradingReviewPage from './pages/teacher/GradingReviewPage';
-import ChallengeQueuePage from './pages/teacher/ChallengeQueuePage';
-import StudentDashboardPage from './pages/student/StudentDashboardPage';
-import ResultDetailPage from './pages/student/ResultDetailPage';
 import ProtectedRoute from './components/ProtectedRoute';
+
+// Lazy-loaded pages for code splitting
+const DashboardPage = lazy(() => import('./pages/teacher/DashboardPage'));
+const ExamDetailsPage = lazy(() => import('./pages/teacher/ExamDetailsPage'));
+const GradingReviewPage = lazy(() => import('./pages/teacher/GradingReviewPage'));
+const ChallengeQueuePage = lazy(() => import('./pages/teacher/ChallengeQueuePage'));
+const StudentDashboardPage = lazy(() => import('./pages/student/StudentDashboardPage'));
+const ResultDetailPage = lazy(() => import('./pages/student/ResultDetailPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+      <p className="mt-4 text-gray-600">Loading...</p>
+    </div>
+  </div>
+);
 
 function App() {
   const dispatch = useAppDispatch();
@@ -43,84 +58,91 @@ function App() {
   }
 
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      
-      {/* Protected teacher routes */}
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute requiredRole="teacher">
-            <DashboardPage />
-          </ProtectedRoute>
-        }
-      />
-      
-      <Route
-        path="/dashboard/exams/:examId"
-        element={
-          <ProtectedRoute requiredRole="teacher">
-            <ExamDetailsPage />
-          </ProtectedRoute>
-        }
-      />
+    <ErrorBoundary>
+      <ToastProvider>
+        <OfflineBanner />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
 
-      <Route
-        path="/dashboard/exams/:examId/review"
-        element={
-          <ProtectedRoute requiredRole="teacher">
-            <GradingReviewPage />
-          </ProtectedRoute>
-        }
-      />
+            {/* Protected teacher routes */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute requiredRole="teacher">
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
 
-      <Route
-        path="/dashboard/challenges"
-        element={
-          <ProtectedRoute requiredRole="teacher">
-            <ChallengeQueuePage />
-          </ProtectedRoute>
-        }
-      />
+            <Route
+              path="/dashboard/exams/:examId"
+              element={
+                <ProtectedRoute requiredRole="teacher">
+                  <ExamDetailsPage />
+                </ProtectedRoute>
+              }
+            />
 
-      {/* Protected student routes */}
-      <Route
-        path="/student/dashboard"
-        element={
-          <ProtectedRoute requiredRole="student">
-            <StudentDashboardPage />
-          </ProtectedRoute>
-        }
-      />
+            <Route
+              path="/dashboard/exams/:examId/review"
+              element={
+                <ProtectedRoute requiredRole="teacher">
+                  <GradingReviewPage />
+                </ProtectedRoute>
+              }
+            />
 
-      <Route
-        path="/student/results/:examId"
-        element={
-          <ProtectedRoute requiredRole="student">
-            <ResultDetailPage />
-          </ProtectedRoute>
-        }
-      />
+            <Route
+              path="/dashboard/challenges"
+              element={
+                <ProtectedRoute requiredRole="teacher">
+                  <ChallengeQueuePage />
+                </ProtectedRoute>
+              }
+            />
 
-      {/* Default redirect */}
-      <Route
-        path="/"
-        element={
-          isAuthenticated && user ? (
-            user.role === 'teacher' ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <Navigate to="/student/dashboard" replace />
-            )
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
-      />
+            {/* Protected student routes */}
+            <Route
+              path="/student/dashboard"
+              element={
+                <ProtectedRoute requiredRole="student">
+                  <StudentDashboardPage />
+                </ProtectedRoute>
+              }
+            />
 
-      {/* Catch-all redirect */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+            <Route
+              path="/student/results/:examId"
+              element={
+                <ProtectedRoute requiredRole="student">
+                  <ResultDetailPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Default redirect */}
+            <Route
+              path="/"
+              element={
+                isAuthenticated && user ? (
+                  user.role === 'teacher' ? (
+                    <Navigate to="/dashboard" replace />
+                  ) : (
+                    <Navigate to="/student/dashboard" replace />
+                  )
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+
+            {/* 404 catch-all */}
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Suspense>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }
 

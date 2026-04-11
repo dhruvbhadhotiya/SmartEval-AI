@@ -122,6 +122,22 @@ def submit_challenge():
         )
         challenge.save()
 
+        # Notify teacher of new challenge
+        try:
+            from services.notification_service import notify_challenge_received
+            student = User.objects(id=student_id).first()
+            teacher = User.objects(id=exam.teacher_id.id).first() if exam else None
+            if teacher and student:
+                notify_challenge_received(
+                    teacher_email=teacher.email,
+                    student_name=student.profile.get('name', student.email),
+                    student_roll=student.profile.get('roll_number', ''),
+                    exam_title=exam.title,
+                    question_numbers=[cq.question_number for cq in cq_list],
+                )
+        except Exception as notify_err:
+            print(f"[Challenge] Notification failed (non-fatal): {notify_err}")
+
         return jsonify(success_response(
             data=challenge.to_dict(),
             message="Challenge submitted successfully"
@@ -357,6 +373,28 @@ def resolve_challenge(challenge_id):
         )
         challenge.status = decision
         challenge.save()
+
+        # Notify student of resolution
+        try:
+            from services.notification_service import notify_challenge_resolved
+            student = User.objects(id=challenge.student_id.id).first()
+            if student:
+                sc_dicts = [
+                    {'question_number': sc.question_number,
+                     'old_score': sc.old_score,
+                     'new_score': sc.new_score}
+                    for sc in score_change_list
+                ] if score_change_list else None
+                notify_challenge_resolved(
+                    student_email=student.email,
+                    student_name=student.profile.get('name', student.email),
+                    exam_title=exam.title,
+                    decision=decision,
+                    comments=comments,
+                    score_changes=sc_dicts,
+                )
+        except Exception as notify_err:
+            print(f"[Challenge] Resolve notification failed (non-fatal): {notify_err}")
 
         return jsonify(success_response(
             data=challenge.to_dict(),

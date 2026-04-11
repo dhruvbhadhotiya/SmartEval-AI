@@ -162,6 +162,21 @@ const examService = {
     })
     return Array.isArray(response.data) ? response.data[0] : response.data
   },
+
+  async getPublishPreview(examId: string): Promise<any> {
+    const response = await apiClient.get<any>(`/api/v1/exams/${examId}/publish-preview`)
+    return Array.isArray(response.data) ? response.data[0] : response.data
+  },
+
+  async publishResults(examId: string): Promise<ExamResponse> {
+    const response = await apiClient.post<any>(`/api/v1/exams/${examId}/publish`)
+    return Array.isArray(response.data) ? response.data[0] : response.data
+  },
+
+  async unpublishResults(examId: string): Promise<ExamResponse> {
+    const response = await apiClient.post<any>(`/api/v1/exams/${examId}/unpublish`)
+    return Array.isArray(response.data) ? response.data[0] : response.data
+  },
 }
 
 export default examService

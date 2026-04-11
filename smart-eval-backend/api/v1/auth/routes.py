@@ -13,11 +13,13 @@ from utils.exceptions import (
     AuthenticationError,
     ConflictError
 )
+from app.extensions import limiter
 
 auth_bp = Blueprint('auth', __name__)
 
 
 @auth_bp.route('/register', methods=['POST'])
+@limiter.limit("5 per minute")
 def register():
     """
     Register a new user
@@ -76,6 +78,7 @@ def register():
 
 
 @auth_bp.route('/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def login():
     """
     Authenticate user and return tokens
@@ -118,6 +121,7 @@ def login():
 
 @auth_bp.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)
+@limiter.limit("30 per minute")
 def refresh():
     """
     Refresh access token using refresh token
