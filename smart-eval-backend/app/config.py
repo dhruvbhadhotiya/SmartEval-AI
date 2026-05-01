@@ -46,14 +46,15 @@ class Config:
     CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
     
     # AI Vision Model (OCR)
-    VISION_PROVIDER = os.getenv('VISION_PROVIDER', 'ollama')  # 'ollama', 'openai', 'lmstudio', 'openrouter', 'groqcloud'
-    VISION_API_URL = os.getenv('VISION_API_URL', 'http://localhost:11434/api/chat')
-    VISION_MODEL = os.getenv('VISION_MODEL', 'llava')
+    # Default to groqcloud so production works without manual env-var setup
+    VISION_PROVIDER = os.getenv('VISION_PROVIDER', 'groqcloud')
+    VISION_API_URL = os.getenv('VISION_API_URL', 'https://api.groq.com/openai/v1')
+    VISION_MODEL = os.getenv('VISION_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct')
 
-    # AI LLM Model (Grading - Sprint 5)
-    LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'ollama')  # 'ollama', 'openai', 'lmstudio', 'openrouter', 'groqcloud'
-    LLM_API_URL = os.getenv('LLM_API_URL', 'http://localhost:11434/api/chat')
-    LLM_MODEL = os.getenv('LLM_MODEL', 'llama3')
+    # AI LLM Model (Grading)
+    LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'groqcloud')
+    LLM_API_URL = os.getenv('LLM_API_URL', 'https://api.groq.com/openai/v1')
+    LLM_MODEL = os.getenv('LLM_MODEL', 'openai/gpt-oss-120b')
     
     # OpenRouter (cloud API - used when VISION_PROVIDER or LLM_PROVIDER is 'openrouter')
     OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
